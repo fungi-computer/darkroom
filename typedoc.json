@@ -1,0 +1,17 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "extends": "../../tooling/docs/typedoc.base.json",
+  "name": "@fungi.computer/darkroom",
+  "entryPoints": [
+    "src/index.ts",
+    "src/app-media-contracts.ts",
+    "src/server.ts",
+    "src/cloudflare.ts",
+    "src/provenance-export.ts",
+    "src/effect.ts",
+    "src/browser.ts"
+  ],
+  "tsconfig": "tsconfig.json",
+  "out": "docs/api",
+  "readme": "docs/overview.md"
+}

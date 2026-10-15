@@ -1,0 +1,125 @@
+{
+  "expectedTarballFiles": [
+    "package/LICENSE",
+    "package/README.md",
+    "package/dist/app-media-contracts.d.ts",
+    "package/dist/app-media-contracts.js",
+    "package/dist/browser-failure.d.ts",
+    "package/dist/browser-failure.js",
+    "package/dist/browser.d.ts",
+    "package/dist/browser.js",
+    "package/dist/cloudflare.d.ts",
+    "package/dist/cloudflare.js",
+    "package/dist/cloudflare/provider.d.ts",
+    "package/dist/cloudflare/provider.js",
+    "package/dist/cloudflare/reference-images.d.ts",
+    "package/dist/cloudflare/reference-images.js",
+    "package/dist/cost-estimate.d.ts",
+    "package/dist/cost-estimate.js",
+    "package/dist/effect.d.ts",
+    "package/dist/effect.js",
+    "package/dist/execution-error.d.ts",
+    "package/dist/execution-error.js",
+    "package/dist/failure.d.ts",
+    "package/dist/failure.js",
+    "package/dist/gateway-models.d.ts",
+    "package/dist/gateway-models.js",
+    "package/dist/index.d.ts",
+    "package/dist/index.js",
+    "package/dist/media-generation.d.ts",
+    "package/dist/media-generation.js",
+    "package/dist/media-operation-contract.d.ts",
+    "package/dist/media-operation-contract.js",
+    "package/dist/media-operation-do.d.ts",
+    "package/dist/media-operation-do.js",
+    "package/dist/media-operation-owner.d.ts",
+    "package/dist/media-operation-owner.js",
+    "package/dist/media-operation-storage.d.ts",
+    "package/dist/media-operation-storage.js",
+    "package/dist/media-operation.d.ts",
+    "package/dist/media-operation.js",
+    "package/dist/model-catalog.d.ts",
+    "package/dist/model-catalog.js",
+    "package/dist/neurons.d.ts",
+    "package/dist/neurons.js",
+    "package/dist/provenance-bytes.d.ts",
+    "package/dist/provenance-bytes.js",
+    "package/dist/provenance-export.d.ts",
+    "package/dist/provenance-export.js",
+    "package/dist/provenance-jpeg.d.ts",
+    "package/dist/provenance-jpeg.js",
+    "package/dist/provenance-png.d.ts",
+    "package/dist/provenance-png.js",
+    "package/dist/provenance-xmp.d.ts",
+    "package/dist/provenance-xmp.js",
+    "package/dist/provenance.d.ts",
+    "package/dist/provenance.js",
+    "package/dist/server.d.ts",
+    "package/dist/server.js",
+    "package/docs/api/README.md",
+    "package/docs/api/app-media-contracts.md",
+    "package/docs/api/browser.md",
+    "package/docs/api/cloudflare.md",
+    "package/docs/api/effect.md",
+    "package/docs/api/index.md",
+    "package/docs/api/modules.md",
+    "package/docs/api/provenance-export.md",
+    "package/docs/api/server.md",
+    "package/package.json"
+  ],
+  "localDependencies": ["../agar", "../cairn"],
+  "runtimeFixture": "test/stranger/runtime.mjs",
+  "typecheckFixture": "test/stranger/consumer.mts",
+  "docs": {
+    "sigil": "generateMedia",
+    "home": {
+      "lead": "Generate media, retain the output and retry a save without generating again.",
+      "example": {
+        "file": "home.ts",
+        "title": "Read the model catalog",
+        "caption": "Read the local media catalog without a provider account or model call."
+      },
+      "ladder": {
+        "start": [
+          {
+            "title": "Quickstart",
+            "href": "/quickstart/",
+            "description": "Run the first example and follow its host setup instructions."
+          }
+        ],
+        "tasks": [
+          {
+            "title": "Core concepts",
+            "href": "/concepts/",
+            "description": "Understand the package contract and host responsibilities."
+          },
+          {
+            "title": "Examples",
+            "href": "/examples/",
+            "description": "Find examples and the checks that exercise them."
+          }
+        ],
+        "reference": [
+          {
+            "title": "API reference",
+            "href": "/api/",
+            "description": "Browse the exported types, methods and schemas."
+          },
+          {
+            "title": "Install",
+            "href": "/install/",
+            "description": "Check entrypoints, dependencies and runtime requirements."
+          },
+          {
+            "title": "Status and limits",
+            "href": "/status/",
+            "description": "Read stability, limits and errors."
+          }
+        ]
+      }
+    }
+  },
+  "consumerDevDependencies": {
+    "@cloudflare/workers-types": "5.20260828.1"
+  }
+}

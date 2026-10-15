@@ -1,0 +1,112 @@
+{
+  "name": "@fungi.computer/darkroom",
+  "version": "0.0.0",
+  "description": "Media generation, durable output retention and provenance with host-owned authority and billing",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./app-media-contracts": {
+      "types": "./dist/app-media-contracts.d.ts",
+      "import": "./dist/app-media-contracts.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./cloudflare": {
+      "types": "./dist/cloudflare.d.ts",
+      "import": "./dist/cloudflare.js"
+    },
+    "./provenance": {
+      "types": "./dist/provenance-export.d.ts",
+      "import": "./dist/provenance-export.js"
+    },
+    "./effect": {
+      "types": "./dist/effect.d.ts",
+      "import": "./dist/effect.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
+    },
+    "./media-binding": {
+      "types": "./dist/media-binding.d.ts",
+      "import": "./dist/media-binding.js"
+    }
+  },
+  "files": [
+    "dist",
+    "docs/api",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "lint": "eslint src test examples --max-warnings=0 && ../../node_modules/.bin/oxlint --config ../../oxlint.config.ts --deny-warnings src test examples",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:workers": "tsc --noEmit --strict --target ES2024 --lib ES2024,ESNext.Disposable --module NodeNext --moduleResolution NodeNext --types @cloudflare/workers-types/experimental --skipLibCheck false test/stranger/native-consumer.mts",
+    "build": "pnpm run clean && tsc -p tsconfig.build.json",
+    "clean": "node --input-type=module --eval \"import { rm } from 'node:fs/promises'; await rm('dist', { recursive: true, force: true });\"",
+    "test": "pnpm run test:node && pnpm run test:cloudflare",
+    "smoke": "node test/stranger/runtime.mjs",
+    "test:node": "vitest run --config vitest.node.config.ts",
+    "test:cloudflare": "vitest run --config vitest.cloudflare.config.ts",
+    "format:check": "node ../../tooling/repository/scripts/format-package-check.mjs",
+    "lint:anti-slop": "node ../../tooling/repository/scripts/lint-package-anti-slop.mjs",
+    "test:unit": "pnpm run test:node",
+    "test:merge": "pnpm run test:cloudflare",
+    "docs": "tsx ../../tooling/repository/src/docs/cli.ts check --root ../..",
+    "docs:write": "tsx ../../tooling/repository/src/docs/cli.ts write --root ../..",
+    "pack": "mkdir -p ../../.botanical/darkroom-pack && pnpm pack --pack-destination ../../.botanical/darkroom-pack",
+    "stranger": "tsx ../../tooling/repository/src/artifacts/cli.ts --repo-root ../.. ."
+  },
+  "dependencies": {
+    "zod": "4.4.3",
+    "@fungi.computer/cairn": "workspace:*",
+    "effect": "4.0.2",
+    "hono": "4.13.5",
+    "png-chunks-extract": "1.0.0",
+    "png-chunks-encode": "1.0.0",
+    "node-webpmux": "3.2.1",
+    "xmlbuilder2": "4.0.3",
+    "exifreader": "4.46.0",
+    "@fungi.computer/ts-webp": "workspace:*",
+    "@xmldom/xmldom": "0.9.12",
+    "@fungi.computer/agar": "workspace:*",
+    "@fungi.computer/capnweb": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11",
+    "wrangler": "4.127.1",
+    "@cloudflare/vitest-plugin": "1.1.2",
+    "@types/png-chunks-extract": "1.0.2",
+    "@types/png-chunks-encode": "1.0.2",
+    "sharp": "0.35.4",
+    "@cloudflare/workers-types": "5.20260828.1"
+  },
+  "botanical": {
+    "role": "package",
+    "operations": {
+      "lint": "required",
+      "typecheck": "required",
+      "build": "required",
+      "test": "required",
+      "docs": "required",
+      "pack": "required",
+      "smoke": "required",
+      "stranger": "required"
+    }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fungi-computer/darkroom.git"
+  }
+}

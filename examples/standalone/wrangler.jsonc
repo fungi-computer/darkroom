@@ -1,0 +1,22 @@
+{
+  "name": "standalone-media-example",
+  "main": "worker.ts",
+  "compatibility_date": "2026-09-02",
+  "durable_objects": {
+    "bindings": [
+      { "name": "MEDIA_HOST", "class_name": "StandaloneMedia" },
+      { "name": "MEDIA_OPERATION", "class_name": "MediaOperationDO" },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["StandaloneMedia", "MediaOperationDO"],
+    },
+  ],
+  "r2_buckets": [
+    { "binding": "APP_ARTIFACTS", "bucket_name": "standalone-media-retained" },
+    { "binding": "OUTPUTS", "bucket_name": "standalone-media-output" },
+  ],
+  "ai": { "binding": "AI" },
+}
