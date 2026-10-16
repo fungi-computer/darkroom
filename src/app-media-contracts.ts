@@ -5,9 +5,9 @@ import { pendingSchema } from "@fungi.computer/agar/backend-definition";
 import { mediaFailureSchema } from "./browser-failure.js";
 
 /** Bounded catalog decoded by the App media broker before host filtering. */
-export const mediaModelsSchema = z
-  .array(mediaModelSchema)
-  .max(listMediaModels().length);
+export const mediaModelsSchema = z.lazy(() =>
+  z.array(mediaModelSchema).max(listMediaModels().length),
+);
 
 /** An absolute output path on the Computer admitted by the App host. */
 export const destinationSchema = z.strictObject({
@@ -41,14 +41,16 @@ export const appMediaAdmissionErrorSchema = z.strictObject({
 });
 
 /** Attachment budget refusal emitted by the Media reservation owner. */
-export const appMediaBudgetRefusalSchema = z.strictObject({
-  /** The attachment's operation budget refused this request. */
-  error: z.literal("attachment_budget_exceeded"),
-  /** Media reservations use the Media budget, not exec or write. */
-  kind: z.literal("media"),
-  /** Delay emitted by the reservation owner. */
-  retryAfterMs: z.number(),
-});
+export const appMediaBudgetRefusalSchema = z.lazy(() =>
+  z.strictObject({
+    /** The attachment's operation budget refused this request. */
+    error: z.literal("attachment_budget_exceeded"),
+    /** Media reservations use the Media budget, not exec or write. */
+    kind: z.literal("media"),
+    /** Delay emitted by the reservation owner. */
+    retryAfterMs: z.number(),
+  }),
+);
 
 /** Existing Media admission refusals, without an admitted selector or callable. */
 export const appMediaAdmissionRefusalSchema = z.union([
@@ -69,12 +71,14 @@ export const appMediaBrokerErrorSchema = appMediaAdmissionErrorSchema.extend({
 });
 
 /** Missing-library refusal decoded and returned by the App media broker. */
-export const agentAppMediaLibraryFailureSchema = z.strictObject({
-  /** The calling Installation's library is unavailable. */
-  error: z.literal("library_unavailable"),
-  /** Existing library-owner presentation copy. */
-  message: z.string().max(4096),
-});
+export const agentAppMediaLibraryFailureSchema = z.lazy(() =>
+  z.strictObject({
+    /** The calling Installation's library is unavailable. */
+    error: z.literal("library_unavailable"),
+    /** Existing library-owner presentation copy. */
+    message: z.string().max(4096),
+  }),
+);
 
 /** Broker projection of an HTTP failure: code becomes error and error becomes message. */
 export const appMediaBrokerFailureSchema = z.strictObject({

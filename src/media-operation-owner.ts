@@ -24,23 +24,27 @@ const ids = defineIdFamily({
 
 const text = z.string().min(1).max(256);
 const path = z.string().min(1).max(1_024);
-const referenceMetadataSchema = z.object({
-  format: z.enum(["png", "jpeg", "gif", "webp"]),
-  width: z.coerce.number().int().positive(),
-  height: z.coerce.number().int().positive(),
-});
+const referenceMetadataSchema = z.lazy(() =>
+  z.object({
+    format: z.enum(["png", "jpeg", "gif", "webp"]),
+    width: z.coerce.number().int().positive(),
+    height: z.coerce.number().int().positive(),
+  }),
+);
 const referenceKey = (operationId: string, index: number) =>
   `media-reference/v1/${operationId}/${String(index)}`;
 
 /** Fixed generation destination captured before provider dispatch. */
-export const mediaOperationDestinationSchema = z.strictObject({
-  /** Host-admitted destination or reference identity. */
-  computerId: text,
-  /** Fixed relative path in the admitted destination. */
-  path,
-  /** Optional verified image encoding pin. */
-  outputFormat: mediaRequestedImageFormatSchema.optional(),
-});
+export const mediaOperationDestinationSchema = z.lazy(() =>
+  z.strictObject({
+    /** Host-admitted destination or reference identity. */
+    computerId: text,
+    /** Fixed relative path in the admitted destination. */
+    path,
+    /** Optional verified image encoding pin. */
+    outputFormat: mediaRequestedImageFormatSchema.optional(),
+  }),
+);
 /** Normalized generation and its fixed destination, captured for exact replay. */
 export type MediaOperationRequest = MediaGenerationSettings &
   z.output<typeof mediaOperationDestinationSchema>;
@@ -80,45 +84,53 @@ export const mediaOperationStateSchema = z.enum({
 export type MediaOperationState = z.output<typeof mediaOperationStateSchema>;
 
 /** Decode retained or saved output size and encoding. */
-export const mediaImageSchema = z.strictObject({
-  /** Output byte length. */
-  bytes: z.number().int().positive(),
-  /** Actual output encoding. */
-  format: text,
-});
+export const mediaImageSchema = z.lazy(() =>
+  z.strictObject({
+    /** Output byte length. */
+    bytes: z.number().int().positive(),
+    /** Actual output encoding. */
+    format: text,
+  }),
+);
 /** Byte length and encoding of generated or saved output. */
 export type MediaImage = z.output<typeof mediaImageSchema>;
-const retainedFormatSchema = z
-  .enum(["image/png", "image/jpeg", "image/gif", "image/webp", "video/mp4"])
-  .transform(
-    (mime) =>
-      ({
-        "image/png": "png",
-        "image/jpeg": "jpeg",
-        "image/gif": "gif",
-        "image/webp": "webp",
-        "video/mp4": "mp4",
-      })[mime],
-  );
-const outputSchema = z.strictObject({
-  key: text,
-  version: text,
-  bytes: z.number().int().positive(),
-  format: text,
-});
+const retainedFormatSchema = z.lazy(() =>
+  z
+    .enum(["image/png", "image/jpeg", "image/gif", "image/webp", "video/mp4"])
+    .transform(
+      (mime) =>
+        ({
+          "image/png": "png",
+          "image/jpeg": "jpeg",
+          "image/gif": "gif",
+          "image/webp": "webp",
+          "video/mp4": "mp4",
+        })[mime],
+    ),
+);
+const outputSchema = z.lazy(() =>
+  z.strictObject({
+    key: text,
+    version: text,
+    bytes: z.number().int().positive(),
+    format: text,
+  }),
+);
 type MediaOutput = z.output<typeof outputSchema>;
 
 /** Decode the settled receipt, including the host-admitted customer price. */
-export const mediaOperationResultSchema = z.strictObject({
-  /** Durable operation identifier. */
-  generationId: text,
-  /** Output byte length. */
-  bytes: z.number().int().positive(),
-  /** Actual output encoding. */
-  format: text,
-  /** Admitted price in milliunits, where 1 cent is 1,000 milliunits. */
-  costMilliunits: z.number().int().nonnegative(),
-});
+export const mediaOperationResultSchema = z.lazy(() =>
+  z.strictObject({
+    /** Durable operation identifier. */
+    generationId: text,
+    /** Output byte length. */
+    bytes: z.number().int().positive(),
+    /** Actual output encoding. */
+    format: text,
+    /** Admitted price in milliunits, where 1 cent is 1,000 milliunits. */
+    costMilliunits: z.number().int().nonnegative(),
+  }),
+);
 /** Settled generation receipt with the host-admitted customer price. */
 export type MediaOperationResult = z.output<typeof mediaOperationResultSchema>;
 
@@ -244,27 +256,29 @@ export type MediaOperationEnvironment = Readonly<{
 /** Stored media type for an output format. */
 const outputMime = (format: string) =>
   format === "mp4" ? "video/mp4" : `image/${format}`;
-const operationRowSchema = z.object({
-  operation_id: z.string(),
-  request_id: z.string(),
-  actor_user_id: z.string(),
-  team_id: z.string(),
-  installation_id: z.string(),
-  fingerprint: z.string(),
-  input: z.string(),
-  state: mediaOperationStateSchema,
-  lease_id: z.string().nullable(),
-  lease_expires_at: z.number().nullable(),
-  estimated_cost_milliunits: z.number().nullable(),
-  image: z.string().nullable(),
-  output: z.string().nullable(),
-  write_receipt: z.string().nullable(),
-  result: z.string().nullable(),
-  created_at: z.number(),
-  updated_at: z.number(),
-  background: z.number(),
-  dispatched_at: z.number().nullable(),
-});
+const operationRowSchema = z.lazy(() =>
+  z.object({
+    operation_id: z.string(),
+    request_id: z.string(),
+    actor_user_id: z.string(),
+    team_id: z.string(),
+    installation_id: z.string(),
+    fingerprint: z.string(),
+    input: z.string(),
+    state: mediaOperationStateSchema,
+    lease_id: z.string().nullable(),
+    lease_expires_at: z.number().nullable(),
+    estimated_cost_milliunits: z.number().nullable(),
+    image: z.string().nullable(),
+    output: z.string().nullable(),
+    write_receipt: z.string().nullable(),
+    result: z.string().nullable(),
+    created_at: z.number(),
+    updated_at: z.number(),
+    background: z.number(),
+    dispatched_at: z.number().nullable(),
+  }),
+);
 type OperationRow = z.output<typeof operationRowSchema>;
 
 const schemaStatements = [
@@ -298,7 +312,7 @@ function fingerprint(input: MediaOperationRequest): string {
   return JSON.stringify(input);
 }
 
-const objectSchema = z.record(z.string(), z.unknown());
+const objectSchema = z.lazy(() => z.record(z.string(), z.unknown()));
 
 function decodeStoredRequest(serialized: string): MediaOperationRequest {
   let raw: unknown;

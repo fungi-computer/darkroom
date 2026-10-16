@@ -68,7 +68,10 @@ export type MediaBindingGeneration = z.output<
 >;
 /** Maintained MEDIA method grammar; guest input carries no principal or Computer. */
 export const mediaBindingCallSchema = z.discriminatedUnion("operation", [
-  z.strictObject({ operation: z.literal("models"), input: z.strictObject({}) }),
+  z.strictObject({
+    operation: z.literal("models"),
+    input: z.strictObject({}),
+  }),
   z.strictObject({
     operation: z.literal("generate"),
     input: mediaBindingGenerationSchema,
@@ -77,10 +80,12 @@ export const mediaBindingCallSchema = z.discriminatedUnion("operation", [
 /** Parsed call consumed by host admission and transport. */
 export type MediaBindingCall = z.output<typeof mediaBindingCallSchema>;
 /** Background-generation reply emitted by the durable service. */
-export const mediaPendingSchema = z.strictObject({
-  status: z.literal("pending"),
-  retryAfterSeconds: z.number().int().positive(),
-});
+export const mediaPendingSchema = z.lazy(() =>
+  z.strictObject({
+    status: z.literal("pending"),
+    retryAfterSeconds: z.number().int().positive(),
+  }),
+);
 /** Parsing and model refusal stay shared; authorization remains host-owned. */
 export function parseMediaBindingCall(
   raw: Schema.Json,

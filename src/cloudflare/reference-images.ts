@@ -11,11 +11,13 @@ import {
 /** The retained `read_image` encoding: JPEG at quality 80. */
 const VIEW_JPEG_QUALITY = 80;
 
-const metadata = z.object({
-  format: z.enum(["image/png", "image/jpeg", "image/gif", "image/webp"]),
-  width: z.number().int().positive(),
-  height: z.number().int().positive(),
-});
+const metadata = z.lazy(() =>
+  z.object({
+    format: z.enum(["image/png", "image/jpeg", "image/gif", "image/webp"]),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+  }),
+);
 const formats = {
   "image/png": "png",
   "image/jpeg": "jpeg",

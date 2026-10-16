@@ -66,33 +66,39 @@ export function estimate(
 
 // Workers AI prefixes upstream error messages with its numeric internal code.
 // Parse only that bounded identifier; the remaining message is never logged.
-const providerFailureCode = z
-  .string()
-  .regex(/^\d{4,5}: /u)
-  .transform((message) => Number(message.split(":", 1)[0]))
-  .nullable()
-  .catch(null);
-
-const providerFailureCategory = z
-  .enum([
-    "InferenceUpstreamError",
-    "AiInternalError",
-    "TypeError",
-    "AbortError",
-    "TimeoutError",
-    "Error",
-  ])
-  .catch("Error");
-
-// Recognize the refusal, not the generic Workers AI error number or prompt text.
-const safetyFilterMessage = z.union([
+const providerFailureCode = z.lazy(() =>
   z
     .string()
-    .regex(/(?:^|:\s)(?:AiError:\s)?Input prompt contains NSFW content\b/iu),
-  // Veo's documented input-policy refusal; keep its details private as well.
-  // https://docs.cloud.google.com/vertex-ai/generative-ai/docs/video/responsible-ai-and-usage-guidelines
-  z.string().regex(/\bit might violate our policies\b/iu),
-]);
+    .regex(/^\d{4,5}: /u)
+    .transform((message) => Number(message.split(":", 1)[0]))
+    .nullable()
+    .catch(null),
+);
+
+const providerFailureCategory = z.lazy(() =>
+  z
+    .enum([
+      "InferenceUpstreamError",
+      "AiInternalError",
+      "TypeError",
+      "AbortError",
+      "TimeoutError",
+      "Error",
+    ])
+    .catch("Error"),
+);
+
+// Recognize the refusal, not the generic Workers AI error number or prompt text.
+const safetyFilterMessage = z.lazy(() =>
+  z.union([
+    z
+      .string()
+      .regex(/(?:^|:\s)(?:AiError:\s)?Input prompt contains NSFW content\b/iu),
+    // Veo's documented input-policy refusal; keep its details private as well.
+    // https://docs.cloud.google.com/vertex-ai/generative-ai/docs/video/responsible-ai-and-usage-guidelines
+    z.string().regex(/\bit might violate our policies\b/iu),
+  ]),
+);
 
 /** Encode multipart once with the platform's boundary, as required by AI.run. */
 function workersAiInput(payload: ReturnType<typeof buildProviderInput>) {

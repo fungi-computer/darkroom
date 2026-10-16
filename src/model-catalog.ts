@@ -29,47 +29,49 @@ export const mediaModelTierSchema = z.enum({
 export type MediaModelTier = z.output<typeof mediaModelTierSchema>;
 
 /** Media's provider catalog: Workers AI images plus gateway image and video models. */
-export const mediaModelInputSchema = z
-  .strictObject({
-    /** Provider input transport. */
-    transport: z.enum({
-      /** JSON provider input. */
-      json: "json",
-      /** Multipart provider input. */
-      multipart: "multipart",
-    }),
-    /** Whether this model accepts explicit output dimensions. */
-    dimensions: z.enum({
-      /** Provider chooses its own dimensions. */
-      none: "none",
-      /** Provider accepts the requested dimensions. */
-      own: "own",
-    }),
-    /** Maximum accepted dimension in pixels, or null when unbounded by this model. */
-    maxDimension: z.number().int().positive().nullable(),
-    /** Default output width in pixels. */
-    defaultWidth: z.number().int().positive(),
-    /** Default output height in pixels. */
-    defaultHeight: z.number().int().positive(),
-    /** Model-specific inference step count. */
-    steps: z.enum({
-      /** Provider reads the steps field. */
-      steps: "steps",
-      /** Provider reads the num_steps field. */
-      num_steps: "num_steps",
-      /** Provider uses fixed inference steps. */
-      fixed: "fixed",
-    }),
-    /** Maximum model steps, or null when the model has no step ceiling. */
-    maxSteps: z.number().int().positive().nullable(),
-    /** Default inference step count. */
-    defaultSteps: z.number().int().nonnegative().nullable(),
-    /** Provider multipart reference-field prefix, or null when unsupported. */
-    referenceField: z.string().min(1).max(256).nullable(),
-    /** Maximum references accepted by this model. */
-    maxReferences: z.number().int().nonnegative(),
-  })
-  .readonly();
+export const mediaModelInputSchema = z.lazy(() =>
+  z
+    .strictObject({
+      /** Provider input transport. */
+      transport: z.enum({
+        /** JSON provider input. */
+        json: "json",
+        /** Multipart provider input. */
+        multipart: "multipart",
+      }),
+      /** Whether this model accepts explicit output dimensions. */
+      dimensions: z.enum({
+        /** Provider chooses its own dimensions. */
+        none: "none",
+        /** Provider accepts the requested dimensions. */
+        own: "own",
+      }),
+      /** Maximum accepted dimension in pixels, or null when unbounded by this model. */
+      maxDimension: z.number().int().positive().nullable(),
+      /** Default output width in pixels. */
+      defaultWidth: z.number().int().positive(),
+      /** Default output height in pixels. */
+      defaultHeight: z.number().int().positive(),
+      /** Model-specific inference step count. */
+      steps: z.enum({
+        /** Provider reads the steps field. */
+        steps: "steps",
+        /** Provider reads the num_steps field. */
+        num_steps: "num_steps",
+        /** Provider uses fixed inference steps. */
+        fixed: "fixed",
+      }),
+      /** Maximum model steps, or null when the model has no step ceiling. */
+      maxSteps: z.number().int().positive().nullable(),
+      /** Default inference step count. */
+      defaultSteps: z.number().int().nonnegative().nullable(),
+      /** Provider multipart reference-field prefix, or null when unsupported. */
+      referenceField: z.string().min(1).max(256).nullable(),
+      /** Maximum references accepted by this model. */
+      maxReferences: z.number().int().nonnegative(),
+    })
+    .readonly(),
+);
 
 /** Verified Unified AI video identifiers; no inferred family aliases. */
 export const mediaVideoModelIdSchema = z.enum({
@@ -139,74 +141,78 @@ export type MediaVideoReferenceRole = z.output<
 >;
 
 /** One nominal size used to select provider resolution and aspect. */
-export const mediaVideoFormatSchema = z
-  .strictObject({
-    /** Provider resolution. */
-    resolution: mediaVideoResolutionSchema,
-    /** Requested aspect; Seedance may derive actual aspect from its first image. */
-    aspectRatio: mediaVideoAspectRatioSchema,
-    /** Nominal width; actual MP4 dimensions are not decoded. */
-    width: z.number().int().positive(),
-    /** Nominal height; actual MP4 dimensions are not decoded. */
-    height: z.number().int().positive(),
-  })
-  .readonly();
+export const mediaVideoFormatSchema = z.lazy(() =>
+  z
+    .strictObject({
+      /** Provider resolution. */
+      resolution: mediaVideoResolutionSchema,
+      /** Requested aspect; Seedance may derive actual aspect from its first image. */
+      aspectRatio: mediaVideoAspectRatioSchema,
+      /** Nominal width; actual MP4 dimensions are not decoded. */
+      width: z.number().int().positive(),
+      /** Nominal height; actual MP4 dimensions are not decoded. */
+      height: z.number().int().positive(),
+    })
+    .readonly(),
+);
 /** One immutable nominal video format. */
 export type MediaVideoFormat = z.output<typeof mediaVideoFormatSchema>;
 
 /** Verified video parameters and provider costs, checked 2026-10-11. */
-export const mediaVideoSchema = z
-  .strictObject({
-    /** Minimum duration, for callers displaying bounds. */
-    minSeconds: z.number().int().positive(),
-    /** Maximum duration; durations still owns membership. */
-    maxSeconds: z.number().int().positive(),
-    /** Default duration. */
-    defaultSeconds: z.number().int().positive(),
-    /** Exact accepted whole-second durations. */
-    durations: z.array(z.number().int().positive()).readonly(),
-    /** Verified provider input grammar. */
-    provider: z.enum({
-      /** Seedance integer duration and data-URI image fields. */
-      seedance: "seedance",
-      /** Veo duration string and base64 image_input. */
-      veo: "veo",
-      /** MiniMax multimodal `content[]` array and uppercase resolution. */
-      minimax: "minimax",
-    }),
-    /** Supported resolution/aspect combinations and their nominal selectors. */
-    formats: z.array(mediaVideoFormatSchema).readonly(),
-    /** Resolution selected when omitted. */
-    defaultResolution: mediaVideoResolutionSchema,
-    /** Aspect selected when omitted. */
-    defaultAspectRatio: mediaVideoAspectRatioSchema,
-    /** Audio default, or null when not documented and left to the provider. */
-    defaultGenerateAudio: z.boolean().nullable(),
-    /** Prompt bound: provider bound for Seedance, retained host bound for Veo. */
-    maxPromptLength: z.number().int().positive(),
-    /** Frame or reference roles this provider accepts. */
-    referenceRoles: z.array(mediaVideoReferenceRoleSchema).readonly(),
-    /** Reference-image mode count; first/last frame mode has its own grammar. */
-    maxReferenceImages: z.number().int().nonnegative(),
-    /** Resolutions supporting reference-image mode. */
-    referenceResolutions: z.array(mediaVideoResolutionSchema).readonly(),
-    /** Non-video-input provider cost; 1 USD = 100,000 milliunits. */
-    prices: z
-      .array(
-        z
-          .strictObject({
-            /** Billed output resolution. */
-            resolution: mediaVideoResolutionSchema,
-            /** Provider milliunits per output second without audio. */
-            silentMilliunitsPerSecond: z.number().int().positive(),
-            /** Provider milliunits per output second with audio. */
-            audioMilliunitsPerSecond: z.number().int().positive(),
-          })
-          .readonly(),
-      )
-      .readonly(),
-  })
-  .readonly();
+export const mediaVideoSchema = z.lazy(() =>
+  z
+    .strictObject({
+      /** Minimum duration, for callers displaying bounds. */
+      minSeconds: z.number().int().positive(),
+      /** Maximum duration; durations still owns membership. */
+      maxSeconds: z.number().int().positive(),
+      /** Default duration. */
+      defaultSeconds: z.number().int().positive(),
+      /** Exact accepted whole-second durations. */
+      durations: z.array(z.number().int().positive()).readonly(),
+      /** Verified provider input grammar. */
+      provider: z.enum({
+        /** Seedance integer duration and data-URI image fields. */
+        seedance: "seedance",
+        /** Veo duration string and base64 image_input. */
+        veo: "veo",
+        /** MiniMax multimodal `content[]` array and uppercase resolution. */
+        minimax: "minimax",
+      }),
+      /** Supported resolution/aspect combinations and their nominal selectors. */
+      formats: z.array(mediaVideoFormatSchema).readonly(),
+      /** Resolution selected when omitted. */
+      defaultResolution: mediaVideoResolutionSchema,
+      /** Aspect selected when omitted. */
+      defaultAspectRatio: mediaVideoAspectRatioSchema,
+      /** Audio default, or null when not documented and left to the provider. */
+      defaultGenerateAudio: z.boolean().nullable(),
+      /** Prompt bound: provider bound for Seedance, retained host bound for Veo. */
+      maxPromptLength: z.number().int().positive(),
+      /** Frame or reference roles this provider accepts. */
+      referenceRoles: z.array(mediaVideoReferenceRoleSchema).readonly(),
+      /** Reference-image mode count; first/last frame mode has its own grammar. */
+      maxReferenceImages: z.number().int().nonnegative(),
+      /** Resolutions supporting reference-image mode. */
+      referenceResolutions: z.array(mediaVideoResolutionSchema).readonly(),
+      /** Non-video-input provider cost; 1 USD = 100,000 milliunits. */
+      prices: z
+        .array(
+          z
+            .strictObject({
+              /** Billed output resolution. */
+              resolution: mediaVideoResolutionSchema,
+              /** Provider milliunits per output second without audio. */
+              silentMilliunitsPerSecond: z.number().int().positive(),
+              /** Provider milliunits per output second with audio. */
+              audioMilliunitsPerSecond: z.number().int().positive(),
+            })
+            .readonly(),
+        )
+        .readonly(),
+    })
+    .readonly(),
+);
 /** Immutable video capability and price metadata. */
 export type MediaVideoModel = z.output<typeof mediaVideoSchema>;
 

@@ -80,7 +80,7 @@ export type {
   MediaOperationObject,
 } from "./media-operation-storage.js";
 
-const identifier = z.string().min(1).max(256);
+const identifier = z.lazy(() => z.string().min(1).max(256));
 /** Decode relative service generation input. Identity comes from the host. */
 export const mediaRequestSchema = z.strictObject({
   /** Fixed destination or reference file path. */

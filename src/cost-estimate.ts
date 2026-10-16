@@ -26,24 +26,26 @@ const TILE = 512;
 const MAX_DIMENSION = 4_096;
 const MAX_REFERENCES = 4;
 
-const imageParamsSchema = z
-  .object({
-    width: z.number().int().min(1).max(MAX_DIMENSION),
-    height: z.number().int().min(1).max(MAX_DIMENSION),
-    steps: z.number().int().min(1).optional(),
-    references: z
-      .array(
-        z
-          .object({
-            width: z.number().int().min(1).max(MAX_DIMENSION),
-            height: z.number().int().min(1).max(MAX_DIMENSION),
-          })
-          .strict(),
-      )
-      .max(MAX_REFERENCES)
-      .optional(),
-  })
-  .strict();
+const imageParamsSchema = z.lazy(() =>
+  z
+    .object({
+      width: z.number().int().min(1).max(MAX_DIMENSION),
+      height: z.number().int().min(1).max(MAX_DIMENSION),
+      steps: z.number().int().min(1).optional(),
+      references: z
+        .array(
+          z
+            .object({
+              width: z.number().int().min(1).max(MAX_DIMENSION),
+              height: z.number().int().min(1).max(MAX_DIMENSION),
+            })
+            .strict(),
+        )
+        .max(MAX_REFERENCES)
+        .optional(),
+    })
+    .strict(),
+);
 
 const invalid = (message: string): never => {
   throw new MediaSettingsError(`image cost parameters are invalid: ${message}`);

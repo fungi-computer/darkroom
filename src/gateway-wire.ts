@@ -1,19 +1,26 @@
 import { z } from "zod";
 
 /** A result URL every gateway provider must return as plain HTTPS. */
-export const resultUrl = z
-  .url()
-  .refine((value) => value.startsWith("https://"), "result URLs must be HTTPS");
+export const resultUrl = z.lazy(() =>
+  z
+    .url()
+    .refine(
+      (value) => value.startsWith("https://"),
+      "result URLs must be HTTPS",
+    ),
+);
 
 /** The Unified AI gateway's normalized answer: a completed state and one
  * result URL. Seedance and Veo answer this way; MiniMax does not. */
-export const gatewayOutputSchema = z.looseObject({
-  state: z.literal("Completed").optional(),
-  result: z.looseObject({
-    image: resultUrl.optional(),
-    video: resultUrl.optional(),
+export const gatewayOutputSchema = z.lazy(() =>
+  z.looseObject({
+    state: z.literal("Completed").optional(),
+    result: z.looseObject({
+      image: resultUrl.optional(),
+      video: resultUrl.optional(),
+    }),
   }),
-});
+);
 
 /** Byte ceilings for fetched results; video stays within Worker memory. */
 export const GATEWAY_VIDEO_MAX_BYTES = 64 * 1024 * 1024;

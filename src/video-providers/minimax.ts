@@ -47,12 +47,14 @@ const minimaxRoleWire = {
 /** MiniMax's documented task wrapper: `{task: {status, content: {url}}}`,
  * distinct from the Unified gateway's `{state, result}` shape Seedance and
  * Veo normalize into. https://developers.cloudflare.com/ai/models/minimax/h3-max/ */
-const minimaxTaskOutputSchema = z.looseObject({
-  task: z.looseObject({
-    status: z.enum(["queued", "running", "succeeded", "failed", "cancelled"]),
-    content: z.looseObject({ url: resultUrl.optional() }).optional(),
+const minimaxTaskOutputSchema = z.lazy(() =>
+  z.looseObject({
+    task: z.looseObject({
+      status: z.enum(["queued", "running", "succeeded", "failed", "cancelled"]),
+      content: z.looseObject({ url: resultUrl.optional() }).optional(),
+    }),
   }),
-});
+);
 
 export const minimaxVideoAdapter: VideoProviderAdapter = {
   buildInput(checked, references, model) {

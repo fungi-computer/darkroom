@@ -125,11 +125,9 @@ export const MIN_VIEW_DIMENSION = 256;
 /** Maximum long-edge size accepted by an image viewer, in pixels. */
 export const MAX_VIEW_DIMENSION = 512;
 /** Decode a viewer long-edge size within the supported pixel bounds. */
-export const viewDimensionSchema = z
-  .number()
-  .int()
-  .min(MIN_VIEW_DIMENSION)
-  .max(MAX_VIEW_DIMENSION);
+export const viewDimensionSchema = z.lazy(() =>
+  z.number().int().min(MIN_VIEW_DIMENSION).max(MAX_VIEW_DIMENSION),
+);
 /**
  * Decode one image and re-encode it for a model to look at: scaled within
  * `maxDimension` on the long edge (bounded by {@link viewDimensionSchema}) as
@@ -465,35 +463,39 @@ function normalizeGenerationSettings<
 }
 
 /** Path-only video reference; the host supplies authority and reads its bytes. */
-export const mediaVideoReferenceSchema = z.strictObject({
-  /** Selected image path, trimmed and nonblank after validation. */
-  path: z.string().min(1).max(4_096),
-  /** Explicit first frame, last frame, or reference-image role. */
-  role: mediaVideoReferenceRoleSchema,
-});
+export const mediaVideoReferenceSchema = z.lazy(() =>
+  z.strictObject({
+    /** Selected image path, trimmed and nonblank after validation. */
+    path: z.string().min(1).max(4_096),
+    /** Explicit first frame, last frame, or reference-image role. */
+    role: mediaVideoReferenceRoleSchema,
+  }),
+);
 /** One path-only video reference. */
 export type MediaVideoReference = z.output<typeof mediaVideoReferenceSchema>;
 /** Neutral video selection; model-specific combinations are checked by validateMediaVideoSelection. */
-export const mediaVideoSelectionSchema = z.strictObject({
-  /** Verified catalog model identifier. */
-  model: mediaVideoModelIdSchema,
-  /** Trimmed prompt; Seedance allows 2,000 characters, Veo uses the retained host cap of 2,048. */
-  prompt: z.string().min(1).max(2_048),
-  /** Model-specific resolution, default 720p. */
-  resolution: mediaVideoResolutionSchema.optional(),
-  /** Model-specific aspect, default 16:9. */
-  aspectRatio: mediaVideoAspectRatioSchema.optional(),
-  /** Whole seconds; Seedance 4–12, Veo exactly 4/6/8, MiniMax H3 Max 5–15. */
-  durationSeconds: z.number().int().min(4).max(15).optional(),
-  /** Veo defaults true; Seedance omits the provider option when unset;
-   * MiniMax H3 Max has no audio field and refuses an explicit choice. */
-  generateAudio: z.boolean().optional(),
-  /** Up to four references, with provider-specific roles and mode limits. */
-  references: z
-    .array(mediaVideoReferenceSchema)
-    .max(MAX_REFERENCE_COUNT)
-    .optional(),
-});
+export const mediaVideoSelectionSchema = z.lazy(() =>
+  z.strictObject({
+    /** Verified catalog model identifier. */
+    model: mediaVideoModelIdSchema,
+    /** Trimmed prompt; Seedance allows 2,000 characters, Veo uses the retained host cap of 2,048. */
+    prompt: z.string().min(1).max(2_048),
+    /** Model-specific resolution, default 720p. */
+    resolution: mediaVideoResolutionSchema.optional(),
+    /** Model-specific aspect, default 16:9. */
+    aspectRatio: mediaVideoAspectRatioSchema.optional(),
+    /** Whole seconds; Seedance 4–12, Veo exactly 4/6/8, MiniMax H3 Max 5–15. */
+    durationSeconds: z.number().int().min(4).max(15).optional(),
+    /** Veo defaults true; Seedance omits the provider option when unset;
+     * MiniMax H3 Max has no audio field and refuses an explicit choice. */
+    generateAudio: z.boolean().optional(),
+    /** Up to four references, with provider-specific roles and mode limits. */
+    references: z
+      .array(mediaVideoReferenceSchema)
+      .max(MAX_REFERENCE_COUNT)
+      .optional(),
+  }),
+);
 /** Caller video selection before defaults and model-specific refinements. */
 export type MediaVideoSelectionInput = z.input<
   typeof mediaVideoSelectionSchema
@@ -734,46 +736,52 @@ export type MediaProviderOutput =
       /** Provider output image entries. */
       entries: readonly MediaProviderImageEntry[];
     }>;
-const providerEntrySchema = z
-  .object({
-    /** Base64-encoded image data. */
-    base64: z.string().optional(),
-    /** Encoded inline image data. */
-    data: z.string().optional(),
-    /** HTTP provider output URL. */
-    url: z
-      .url()
-      .refine(
-        (value) => /^https?:\/\//iu.test(value),
-        "provider image URLs must use HTTP(S)",
-      )
-      .optional(),
-  })
-  .strict();
-const providerEnvelopeSchema = z.union([
-  z.object({
-    /** Encoded provider image. */
-    image: z.string().min(1),
-  }),
-  z.object({
-    /** Provider image entries. */
-    image: z.array(providerEntrySchema),
-  }),
-  z.object({
-    /** Provider output image entries. */
-    images: z.array(providerEntrySchema),
-  }),
-]);
+const providerEntrySchema = z.lazy(() =>
+  z
+    .object({
+      /** Base64-encoded image data. */
+      base64: z.string().optional(),
+      /** Encoded inline image data. */
+      data: z.string().optional(),
+      /** HTTP provider output URL. */
+      url: z
+        .url()
+        .refine(
+          (value) => /^https?:\/\//iu.test(value),
+          "provider image URLs must use HTTP(S)",
+        )
+        .optional(),
+    })
+    .strict(),
+);
+const providerEnvelopeSchema = z.lazy(() =>
+  z.union([
+    z.object({
+      /** Encoded provider image. */
+      image: z.string().min(1),
+    }),
+    z.object({
+      /** Provider image entries. */
+      image: z.array(providerEntrySchema),
+    }),
+    z.object({
+      /** Provider output image entries. */
+      images: z.array(providerEntrySchema),
+    }),
+  ]),
+);
 
 /** Decode the Workers AI binding's raw output at the provider boundary. */
-export const mediaProviderWireSchema = z.union([
-  providerEnvelopeSchema,
-  z.instanceof(Uint8Array),
-  z.instanceof(Response),
-  z.custom<ReadableStream<Uint8Array>>(
-    (value) => value instanceof ReadableStream,
-  ),
-]);
+export const mediaProviderWireSchema = z.lazy(() =>
+  z.union([
+    providerEnvelopeSchema,
+    z.instanceof(Uint8Array),
+    z.instanceof(Response),
+    z.custom<ReadableStream<Uint8Array>>(
+      (value) => value instanceof ReadableStream,
+    ),
+  ]),
+);
 /** Supported raw provider representations, decoded by mediaProviderWireSchema. */
 export type MediaProviderWire = z.output<typeof mediaProviderWireSchema>;
 /** Native Workers AI output or an already decoded provider representation. */
