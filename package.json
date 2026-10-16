@@ -1,6 +1,7 @@
 {
   "name": "@fungi.computer/darkroom",
-  "version": "0.0.0",
+  "version": "0.0.1",
+  "author": "Levi <levi@technomancy.dev>",
   "description": "Media generation, durable output retention and provenance with host-owned authority and billing",
   "type": "module",
   "sideEffects": false,

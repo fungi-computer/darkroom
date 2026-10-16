@@ -1,8 +1,6 @@
 import { Buffer as NodeBuffer } from "node:buffer";
 import { replacePngXmp } from "./provenance-png.js";
 import { replaceJpegXmp } from "./provenance-jpeg.js";
-import webp from "node-webpmux";
-import { create } from "xmlbuilder2";
 import type { ImageFormat } from "./index.js";
 import { reportCatchFailure } from "./failure.js";
 
@@ -21,7 +19,10 @@ export type ProvenanceEmbedResult =
       reason: "unsupported-format" | "signed-image" | "invalid-image";
     }>;
 
-function packet(facts: ProvenanceFacts): string {
+// The XMP builder and WebP muxer load on the first embed: a Worker that hosts
+// this module never pays to evaluate them at startup.
+async function packet(facts: ProvenanceFacts): Promise<string> {
+  const { create } = await import("xmlbuilder2");
   const document = create({ invalidCharReplacement: "�" });
   const description = document
     .ele("adobe:ns:meta/", "x:xmpmeta")
@@ -46,6 +47,7 @@ function packet(facts: ProvenanceFacts): string {
 }
 
 async function embedWebp(bytes: Uint8Array, xmp: string): Promise<Uint8Array> {
+  const { default: webp } = await import("node-webpmux");
   const image = new webp.Image();
   await image.load(NodeBuffer.from(bytes));
   image.xmp = NodeBuffer.from(xmp, "utf8");
@@ -68,7 +70,7 @@ export async function embedProvenance(
   )
     return { bytes, embedded: false, reason: "signed-image" };
   try {
-    const xmp = packet(facts);
+    const xmp = await packet(facts);
     const output =
       format === "png"
         ? replacePngXmp(bytes, xmp)
