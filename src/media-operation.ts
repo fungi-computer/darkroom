@@ -123,8 +123,15 @@ export function executeMediaOperation(input: MediaExecution) {
     }
     if (claim.kind === "interrupted") {
       yield* settleNothing();
-      if (claim.operation.providerRefusal === "safety_filter_refused")
-        return yield* Effect.fail(new MediaSafetyFilterRefusal());
+      const failure = claim.operation.providerFailure;
+      if (failure !== null)
+        return yield* Effect.fail(
+          failure.safetyRefused
+            ? new MediaSafetyFilterRefusal({ provider: failure.provider })
+            : new MediaExecutionError(failure.stage, {
+                provider: failure.provider,
+              }),
+        );
     }
     if (claim.kind !== "claimed" || claim.leaseId === undefined)
       return {
@@ -233,20 +240,20 @@ export function executeMediaOperation(input: MediaExecution) {
         }, "provider").pipe(
           // A provider failure delivered nothing and wrote no output: end the
           // request now and release its hold rather than leave it unresolved.
-          Effect.tapError((error) =>
-            error.stage === "provider"
+          Effect.tapError((error) => {
+            const stage = error.stage;
+            return stage === "provider" || stage === "normalization"
               ? call(
                   () =>
-                    input.operation.interruptGeneration(
-                      leaseId,
-                      error instanceof MediaSafetyFilterRefusal
-                        ? "safety_filter_refused"
-                        : undefined,
-                    ),
+                    input.operation.interruptGeneration(leaseId, {
+                      stage,
+                      safetyRefused: error instanceof MediaSafetyFilterRefusal,
+                      provider: error.provider,
+                    }),
                   "operation",
                 ).pipe(Effect.andThen(settleNothing()), Effect.ignore)
-              : Effect.void,
-          ),
+              : Effect.void;
+          }),
         );
         if (generation.kind === "interrupted") {
           yield* settleNothing();

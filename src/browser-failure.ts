@@ -2,6 +2,7 @@ import * as z from "zod";
 import { mediaFailureStageSchema } from "./execution-error.js";
 import { Option, Schema } from "effect";
 import { reportCatchFailure } from "./failure.js";
+import { mediaProviderDiagnosticWireSchema } from "@fungi.computer/agar/errors";
 
 /** Host diagnostic sink; generation errors and retry truth remain transport-owned. */
 export type MediaGenerationDiagnostic = (
@@ -35,6 +36,8 @@ export const mediaFailureSchema = z.strictObject({
   }),
   /** Whether repeating this exact attempt may recover. */
   retryable: z.boolean(),
+  /** Allowlisted provider facts only; the original cause never crosses HTTP. */
+  provider: mediaProviderDiagnosticWireSchema.optional(),
 });
 
 /** Sanitized Media failure carried from the authenticated host to Agar. */

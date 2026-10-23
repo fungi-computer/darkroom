@@ -45,6 +45,7 @@ export {
   MediaExecutionError,
   type MediaBillingRefusalCode,
   type MediaFailureStage,
+  type MediaExecutionErrorOptions,
 } from "./execution-error.js";
 export { mediaUnits, type MediaUnits } from "./gateway-models.js";
 export type {
@@ -198,6 +199,7 @@ function failure(
         stage: "provider",
         code: "SAFETY_FILTER_REFUSED",
         retryable: false,
+        provider: error.provider,
       },
       { status: 400, headers },
     );
@@ -281,6 +283,8 @@ function failure(
       stage: error.stage,
       code: "HOST_FAILURE",
       retryable: error.stage !== "normalization" && error.stage !== "provider",
+      provider:
+        error instanceof MediaExecutionError ? error.provider : undefined,
     },
     {
       status: 503,

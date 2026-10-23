@@ -1,4 +1,8 @@
 import * as z from "zod";
+import {
+  decodeMediaProviderDiagnostic,
+  type MediaProviderDiagnostic,
+} from "@fungi.computer/agar/errors";
 
 /** Public diagnostic labels only; never provider messages or request data. */
 export const mediaFailureStageSchema = z.enum({
@@ -32,21 +36,34 @@ export type MediaFailureStage = Exclude<
   "admission" | "settings"
 >;
 
+/** Private cause plus an independently decoded, safe provider diagnostic. */
+export type MediaExecutionErrorOptions = ErrorOptions & {
+  /** Safe provider facts, when the failure came from provider transport. */
+  readonly provider?: MediaProviderDiagnostic | undefined;
+};
+
 /** A bounded stage marker for failures that cross the Media HTTP boundary. */
 export class MediaExecutionError extends Error {
+  /** Safe provider facts only; the original cause remains private. */
+  readonly provider: MediaProviderDiagnostic | undefined;
+
   constructor(
     /** Execution stage where the failure occurred. */
     readonly stage: MediaFailureStage,
-    options?: ErrorOptions,
+    options?: MediaExecutionErrorOptions,
   ) {
     super(`Media ${stage} failed`, options);
     this.name = "MediaExecutionError";
+    this.provider =
+      options?.provider === undefined
+        ? undefined
+        : decodeMediaProviderDiagnostic(options.provider);
   }
 }
 
 /** A provider safety filter refused generation; no output was delivered. */
 export class MediaSafetyFilterRefusal extends MediaExecutionError {
-  constructor(options?: ErrorOptions) {
+  constructor(options?: MediaExecutionErrorOptions) {
     super("provider", options);
     this.name = "MediaSafetyFilterRefusal";
   }

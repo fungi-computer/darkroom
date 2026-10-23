@@ -68,6 +68,20 @@ const mediaFailureSchema: ZodObject<{
      SAFETY_FILTER_REFUSED: "SAFETY_FILTER_REFUSED";
   }>;
   retryable: ZodBoolean;
+  provider: ZodOptional<ZodPipe<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodTransform<
+     | Readonly<{
+     category:   | "InferenceUpstreamError"
+        | "AiInternalError"
+        | "TypeError"
+        | "AbortError"
+        | "TimeoutError"
+        | "Error";
+     code: number | null;
+   }>
+     | Readonly<{
+     category: "result_download";
+     status: number;
+  }>, unknown>>>;
 }, $strict>;
 ```
 
@@ -103,6 +117,21 @@ function readMediaFailure(
     | "INVALID_ARGUMENT"
     | "SAFETY_FILTER_REFUSED";
   retryable: boolean;
+  provider?:
+    | Readonly<{
+        category:
+          | "InferenceUpstreamError"
+          | "AiInternalError"
+          | "TypeError"
+          | "AbortError"
+          | "TimeoutError"
+          | "Error";
+        code: number | null;
+      }>
+    | Readonly<{
+        category: "result_download";
+        status: number;
+      }>;
 } | null>;
 ```
 
@@ -122,5 +151,8 @@ Read and decode one Media host failure at the browser HTTP boundary.
 \| `"operation"` \| `"normalization"` \| `"artifact"` \|
 `"destination-authorization"` \| `"destination-write"`; `code`: \|
 `"CAPABILITY_DENIED"` \| `"INSUFFICIENT_CREDIT"` \| `"HOST_FAILURE"` \|
-`"INVALID_ARGUMENT"` \| `"SAFETY_FILTER_REFUSED"`; `retryable`: `boolean`; \} \|
-`null`\>
+`"INVALID_ARGUMENT"` \| `"SAFETY_FILTER_REFUSED"`; `retryable`: `boolean`;
+`provider?`: \| `Readonly`\<\{ `category`: \| `"InferenceUpstreamError"` \|
+`"AiInternalError"` \| `"TypeError"` \| `"AbortError"` \| `"TimeoutError"` \|
+`"Error"`; `code`: `number` \| `null`; \}\> \| `Readonly`\<\{ `category`:
+`"result_download"`; `status`: `number`; \}\>; \} \| `null`\>

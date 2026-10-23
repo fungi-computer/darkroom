@@ -28,10 +28,10 @@ new MediaExecutionError(stage, options?): MediaExecutionError;
 
 ###### Parameters
 
-| Parameter  | Type                                      | Description                                 |
-| ---------- | ----------------------------------------- | ------------------------------------------- |
-| `stage`    | [`MediaFailureStage`](#mediafailurestage) | Execution stage where the failure occurred. |
-| `options?` | `ErrorOptions`                            | -                                           |
+| Parameter  | Type                                                        | Description                                 |
+| ---------- | ----------------------------------------------------------- | ------------------------------------------- |
+| `stage`    | [`MediaFailureStage`](#mediafailurestage)                   | Execution stage where the failure occurred. |
+| `options?` | [`MediaExecutionErrorOptions`](#mediaexecutionerroroptions) | -                                           |
 
 ###### Returns
 
@@ -44,6 +44,14 @@ Error.constructor;
 ```
 
 #### Properties
+
+##### provider
+
+```ts
+readonly provider: MediaProviderDiagnostic | undefined;
+```
+
+Safe provider facts only; the original cause remains private.
 
 ##### stage
 
@@ -150,7 +158,12 @@ read():
      | "succeeded"
      | "interrupted";
   spentFailure: "output_format_mismatch" | null;
-  providerRefusal: "safety_filter_refused" | null;
+  providerFailure:   | Readonly<{
+     stage: "provider" | "normalization";
+     safetyRefused: boolean;
+     provider?: MediaProviderDiagnostic;
+   }>
+     | null;
   estimatedCostMilliunits: number | null;
   image:   | {
      bytes: number;
@@ -179,11 +192,12 @@ erasure.
 `string`; `owner`: `string`; `state`: \| `"admitted"` \| `"estimating"` \|
 `"generating"` \| `"writing"` \| `"charging"` \| `"written"` \| `"succeeded"` \|
 `"interrupted"`; `spentFailure`: `"output_format_mismatch"` \| `null`;
-`providerRefusal`: `"safety_filter_refused"` \| `null`;
-`estimatedCostMilliunits`: `number` \| `null`; `image`: \| \{ `bytes`: `number`;
-`format`: `string`; \} \| `null`; `result`: \| \{ `generationId`: `string`;
-`bytes`: `number`; `format`: `string`; `costMilliunits`: `number`; \} \| `null`;
-`createdAt`: `number`; `updatedAt`: `number`; \}\> \| `null`
+`providerFailure`: \| `Readonly`\<\{ `stage`: `"provider"` \| `"normalization"`;
+`safetyRefused`: `boolean`; `provider?`: `MediaProviderDiagnostic`; \}\> \|
+`null`; `estimatedCostMilliunits`: `number` \| `null`; `image`: \| \{ `bytes`:
+`number`; `format`: `string`; \} \| `null`; `result`: \| \{ `generationId`:
+`string`; `bytes`: `number`; `format`: `string`; `costMilliunits`: `number`; \}
+\| `null`; `createdAt`: `number`; `updatedAt`: `number`; \}\> \| `null`
 
 ##### preflightErasure()
 
@@ -311,7 +325,12 @@ recordEstimate(leaseId, costMilliunits): Readonly<{
      | "succeeded"
      | "interrupted";
   spentFailure: "output_format_mismatch" | null;
-  providerRefusal: "safety_filter_refused" | null;
+  providerFailure:   | Readonly<{
+     stage: "provider" | "normalization";
+     safetyRefused: boolean;
+     provider?: MediaProviderDiagnostic;
+   }>
+     | null;
   estimatedCostMilliunits: number | null;
   image:   | {
      bytes: number;
@@ -345,11 +364,12 @@ Pin the admitted price and begin the generation lease.
 `string`; `owner`: `string`; `state`: \| `"admitted"` \| `"estimating"` \|
 `"generating"` \| `"writing"` \| `"charging"` \| `"written"` \| `"succeeded"` \|
 `"interrupted"`; `spentFailure`: `"output_format_mismatch"` \| `null`;
-`providerRefusal`: `"safety_filter_refused"` \| `null`;
-`estimatedCostMilliunits`: `number` \| `null`; `image`: \| \{ `bytes`: `number`;
-`format`: `string`; \} \| `null`; `result`: \| \{ `generationId`: `string`;
-`bytes`: `number`; `format`: `string`; `costMilliunits`: `number`; \} \| `null`;
-`createdAt`: `number`; `updatedAt`: `number`; \}\>
+`providerFailure`: \| `Readonly`\<\{ `stage`: `"provider"` \| `"normalization"`;
+`safetyRefused`: `boolean`; `provider?`: `MediaProviderDiagnostic`; \}\> \|
+`null`; `estimatedCostMilliunits`: `number` \| `null`; `image`: \| \{ `bytes`:
+`number`; `format`: `string`; \} \| `null`; `result`: \| \{ `generationId`:
+`string`; `bytes`: `number`; `format`: `string`; `costMilliunits`: `number`; \}
+\| `null`; `createdAt`: `number`; `updatedAt`: `number`; \}\>
 
 ##### dispatchInBackground()
 
@@ -368,7 +388,12 @@ dispatchInBackground(leaseId, references): Promise<Readonly<{
      | "succeeded"
      | "interrupted";
   spentFailure: "output_format_mismatch" | null;
-  providerRefusal: "safety_filter_refused" | null;
+  providerFailure:   | Readonly<{
+     stage: "provider" | "normalization";
+     safetyRefused: boolean;
+     provider?: MediaProviderDiagnostic;
+   }>
+     | null;
   estimatedCostMilliunits: number | null;
   image:   | {
      bytes: number;
@@ -404,11 +429,13 @@ output, and releases the lease so a later retry saves and charges it.
 `namespace`: `string`; `owner`: `string`; `state`: \| `"admitted"` \|
 `"estimating"` \| `"generating"` \| `"writing"` \| `"charging"` \| `"written"`
 \| `"succeeded"` \| `"interrupted"`; `spentFailure`: `"output_format_mismatch"`
-\| `null`; `providerRefusal`: `"safety_filter_refused"` \| `null`;
-`estimatedCostMilliunits`: `number` \| `null`; `image`: \| \{ `bytes`: `number`;
-`format`: `string`; \} \| `null`; `result`: \| \{ `generationId`: `string`;
-`bytes`: `number`; `format`: `string`; `costMilliunits`: `number`; \} \| `null`;
-`createdAt`: `number`; `updatedAt`: `number`; \}\>\>
+\| `null`; `providerFailure`: \| `Readonly`\<\{ `stage`: `"provider"` \|
+`"normalization"`; `safetyRefused`: `boolean`; `provider?`:
+`MediaProviderDiagnostic`; \}\> \| `null`; `estimatedCostMilliunits`: `number`
+\| `null`; `image`: \| \{ `bytes`: `number`; `format`: `string`; \} \| `null`;
+`result`: \| \{ `generationId`: `string`; `bytes`: `number`; `format`: `string`;
+`costMilliunits`: `number`; \} \| `null`; `createdAt`: `number`; `updatedAt`:
+`number`; \}\>\>
 
 ##### alarm()
 
@@ -425,17 +452,17 @@ Run a background generation once; a retried alarm never redispatches.
 ##### interruptGeneration()
 
 ```ts
-interruptGeneration(leaseId, refusalInput?): MediaOperationProjection;
+interruptGeneration(leaseId, failureInput?): MediaOperationProjection;
 ```
 
 An aborted in-flight provider call is terminal for this request ID.
 
 ###### Parameters
 
-| Parameter       | Type                      |
-| --------------- | ------------------------- |
-| `leaseId`       | `string`                  |
-| `refusalInput?` | `"safety_filter_refused"` |
+| Parameter       | Type                                                                                                                                |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `leaseId`       | `string`                                                                                                                            |
+| `failureInput?` | `Readonly`\<\{ `stage`: `"provider"` \| `"normalization"`; `safetyRefused`: `boolean`; `provider?`: `MediaProviderDiagnostic`; \}\> |
 
 ###### Returns
 
@@ -522,7 +549,12 @@ recordWritten(
      | "succeeded"
      | "interrupted";
   spentFailure: "output_format_mismatch" | null;
-  providerRefusal: "safety_filter_refused" | null;
+  providerFailure:   | Readonly<{
+     stage: "provider" | "normalization";
+     safetyRefused: boolean;
+     provider?: MediaProviderDiagnostic;
+   }>
+     | null;
   estimatedCostMilliunits: number | null;
   image:   | {
      bytes: number;
@@ -559,11 +591,12 @@ Record a destination write and move to idempotent settlement.
 `string`; `owner`: `string`; `state`: \| `"admitted"` \| `"estimating"` \|
 `"generating"` \| `"writing"` \| `"charging"` \| `"written"` \| `"succeeded"` \|
 `"interrupted"`; `spentFailure`: `"output_format_mismatch"` \| `null`;
-`providerRefusal`: `"safety_filter_refused"` \| `null`;
-`estimatedCostMilliunits`: `number` \| `null`; `image`: \| \{ `bytes`: `number`;
-`format`: `string`; \} \| `null`; `result`: \| \{ `generationId`: `string`;
-`bytes`: `number`; `format`: `string`; `costMilliunits`: `number`; \} \| `null`;
-`createdAt`: `number`; `updatedAt`: `number`; \}\>
+`providerFailure`: \| `Readonly`\<\{ `stage`: `"provider"` \| `"normalization"`;
+`safetyRefused`: `boolean`; `provider?`: `MediaProviderDiagnostic`; \}\> \|
+`null`; `estimatedCostMilliunits`: `number` \| `null`; `image`: \| \{ `bytes`:
+`number`; `format`: `string`; \} \| `null`; `result`: \| \{ `generationId`:
+`string`; `bytes`: `number`; `format`: `string`; `costMilliunits`: `number`; \}
+\| `null`; `createdAt`: `number`; `updatedAt`: `number`; \}\>
 
 ##### recordWrittenWithoutSettlement()
 
@@ -586,7 +619,12 @@ recordWrittenWithoutSettlement(
      | "succeeded"
      | "interrupted";
   spentFailure: "output_format_mismatch" | null;
-  providerRefusal: "safety_filter_refused" | null;
+  providerFailure:   | Readonly<{
+     stage: "provider" | "normalization";
+     safetyRefused: boolean;
+     provider?: MediaProviderDiagnostic;
+   }>
+     | null;
   estimatedCostMilliunits: number | null;
   image:   | {
      bytes: number;
@@ -625,11 +663,12 @@ repeats provider generation.
 `string`; `owner`: `string`; `state`: \| `"admitted"` \| `"estimating"` \|
 `"generating"` \| `"writing"` \| `"charging"` \| `"written"` \| `"succeeded"` \|
 `"interrupted"`; `spentFailure`: `"output_format_mismatch"` \| `null`;
-`providerRefusal`: `"safety_filter_refused"` \| `null`;
-`estimatedCostMilliunits`: `number` \| `null`; `image`: \| \{ `bytes`: `number`;
-`format`: `string`; \} \| `null`; `result`: \| \{ `generationId`: `string`;
-`bytes`: `number`; `format`: `string`; `costMilliunits`: `number`; \} \| `null`;
-`createdAt`: `number`; `updatedAt`: `number`; \}\>
+`providerFailure`: \| `Readonly`\<\{ `stage`: `"provider"` \| `"normalization"`;
+`safetyRefused`: `boolean`; `provider?`: `MediaProviderDiagnostic`; \}\> \|
+`null`; `estimatedCostMilliunits`: `number` \| `null`; `image`: \| \{ `bytes`:
+`number`; `format`: `string`; \} \| `null`; `result`: \| \{ `generationId`:
+`string`; `bytes`: `number`; `format`: `string`; `costMilliunits`: `number`; \}
+\| `null`; `createdAt`: `number`; `updatedAt`: `number`; \}\>
 
 ##### recordSucceeded()
 
@@ -648,7 +687,12 @@ recordSucceeded(leaseId, resultInput): Readonly<{
      | "succeeded"
      | "interrupted";
   spentFailure: "output_format_mismatch" | null;
-  providerRefusal: "safety_filter_refused" | null;
+  providerFailure:   | Readonly<{
+     stage: "provider" | "normalization";
+     safetyRefused: boolean;
+     provider?: MediaProviderDiagnostic;
+   }>
+     | null;
   estimatedCostMilliunits: number | null;
   image:   | {
      bytes: number;
@@ -686,11 +730,12 @@ Commit the settled receipt after verifying the saved output and admitted price.
 `string`; `owner`: `string`; `state`: \| `"admitted"` \| `"estimating"` \|
 `"generating"` \| `"writing"` \| `"charging"` \| `"written"` \| `"succeeded"` \|
 `"interrupted"`; `spentFailure`: `"output_format_mismatch"` \| `null`;
-`providerRefusal`: `"safety_filter_refused"` \| `null`;
-`estimatedCostMilliunits`: `number` \| `null`; `image`: \| \{ `bytes`: `number`;
-`format`: `string`; \} \| `null`; `result`: \| \{ `generationId`: `string`;
-`bytes`: `number`; `format`: `string`; `costMilliunits`: `number`; \} \| `null`;
-`createdAt`: `number`; `updatedAt`: `number`; \}\>
+`providerFailure`: \| `Readonly`\<\{ `stage`: `"provider"` \| `"normalization"`;
+`safetyRefused`: `boolean`; `provider?`: `MediaProviderDiagnostic`; \}\> \|
+`null`; `estimatedCostMilliunits`: `number` \| `null`; `image`: \| \{ `bytes`:
+`number`; `format`: `string`; \} \| `null`; `result`: \| \{ `generationId`:
+`string`; `bytes`: `number`; `format`: `string`; `costMilliunits`: `number`; \}
+\| `null`; `createdAt`: `number`; `updatedAt`: `number`; \}\>
 
 ##### releaseEstimate()
 
@@ -725,6 +770,22 @@ Execution stage at which a generation failed.
 
 ---
 
+### MediaExecutionErrorOptions
+
+```ts
+type MediaExecutionErrorOptions = ErrorOptions & object;
+```
+
+Private cause plus an independently decoded, safe provider diagnostic.
+
+#### Type Declaration
+
+| Name        | Type                      | Description                                                         |
+| ----------- | ------------------------- | ------------------------------------------------------------------- |
+| `provider?` | `MediaProviderDiagnostic` | Safe provider facts, when the failure came from provider transport. |
+
+---
+
 ### MediaBillingRefusalCode
 
 ```ts
@@ -746,6 +807,41 @@ type MediaUnits = Readonly<{
 ```
 
 What one generation bills: whole images, or seconds of video.
+
+---
+
+### MediaBindingGeneration
+
+```ts
+type MediaBindingGeneration = z.output<typeof mediaBindingGenerationSchema>;
+```
+
+Parsed generation command consumed by either host.
+
+---
+
+### MediaBindingCall
+
+```ts
+type MediaBindingCall = z.output<typeof mediaBindingCallSchema>;
+```
+
+Parsed call consumed by host admission and transport.
+
+---
+
+### MediaBindingRequest
+
+```ts
+type MediaBindingRequest = Readonly<{
+  path: string;
+  settings: MediaGenerationSettings;
+  outputFormat?: z.output<typeof mediaRequestedImageFormatSchema>;
+}>;
+```
+
+Relative service input after the host attaches its trusted Computer to
+references.
 
 ---
 
@@ -861,7 +957,11 @@ type MediaOperationProjection = Readonly<{
   owner: string;
   state: MediaOperationState;
   spentFailure: "output_format_mismatch" | null;
-  providerRefusal: "safety_filter_refused" | null;
+  providerFailure: Readonly<{
+    stage: Extract<MediaFailureStage, "provider" | "normalization">;
+    safetyRefused: boolean;
+    provider?: MediaProviderDiagnostic;
+  }> | null;
   estimatedCostMilliunits: number | null;
   image: MediaImage | null;
   result: MediaOperationResult | null;
@@ -1424,6 +1524,253 @@ The typed result of one generation, shared by the Hono route and the Agent path.
 
 ## Variables
 
+### mediaImageBindingInputSchema
+
+```ts
+const mediaImageBindingInputSchema: ZodObject<{
+  kind: ZodLiteral<"image">;
+  requestId: ZodLazy<ZodString>;
+  libraryPath: ZodString & ZodType<string, string, $ZodTypeInternals<string, string>>;
+  settings: ZodObject<{
+     model: ZodString;
+     prompt: ZodString;
+     width: ZodNumber;
+     height: ZodNumber;
+     resolution: ZodOptional<ZodEnum<{
+        p480: "480p";
+        p720: "720p";
+        p768: "768p";
+        p1080: "1080p";
+        p4k: "4k";
+     }>>;
+     aspectRatio: ZodOptional<ZodEnum<{
+        wide: "16:9";
+        landscape: "4:3";
+        square: "1:1";
+        portrait: "3:4";
+        tall: "9:16";
+        ultrawide: "21:9";
+        ultratall: "9:21";
+     }>>;
+     generateAudio: ZodOptional<ZodBoolean>;
+     references: ZodOptional<ZodArray<ZodObject<{
+        path: ZodString;
+        role: ZodOptional<ZodEnum<{
+           first: ...;
+           last: ...;
+           reference: ...;
+        }>>;
+     }, $strict>>>;
+     steps: ZodOptional<ZodNumber>;
+  }, $strict>;
+  outputFormat: ZodOptional<ZodEnum<{
+     png: "png";
+     jpeg: "jpeg";
+     webp: "webp";
+  }>>;
+}, $strict>;
+```
+
+Image settings and path references crossing a scoped MEDIA binding.
+
+---
+
+### mediaVideoBindingInputSchema
+
+```ts
+const mediaVideoBindingInputSchema: ZodObject<{
+  kind: ZodLiteral<"video">;
+  requestId: ZodLazy<ZodString>;
+  libraryPath: ZodString & ZodType<string, string, $ZodTypeInternals<string, string>>;
+  settings: ZodLazy<ZodObject<{
+     model: ZodEnum<{
+        seedance: "bytedance/seedance-2.0";
+        seedanceFast: "bytedance/seedance-2.0-fast";
+        seedanceMini: "bytedance/seedance-2.0-mini";
+        veo: "google/veo-3.1";
+        veoFast: "google/veo-3.1-fast";
+        minimaxH3Max: "minimax/h3-max";
+     }>;
+     prompt: ZodString;
+     resolution: ZodOptional<ZodEnum<{
+        p480: "480p";
+        p720: "720p";
+        p768: "768p";
+        p1080: "1080p";
+        p4k: "4k";
+     }>>;
+     aspectRatio: ZodOptional<ZodEnum<{
+        wide: "16:9";
+        landscape: "4:3";
+        square: "1:1";
+        portrait: "3:4";
+        tall: "9:16";
+        ultrawide: "21:9";
+        ultratall: "9:21";
+     }>>;
+     durationSeconds: ZodOptional<ZodNumber>;
+     generateAudio: ZodOptional<ZodBoolean>;
+     references: ZodOptional<ZodArray<ZodLazy<ZodObject<{
+        path: ZodString;
+        role: ZodEnum<...>;
+     }, $strict>>>>;
+  }, $strict>>;
+}, $strict>;
+```
+
+Video settings and path references crossing the same scoped binding.
+
+---
+
+### mediaBindingGenerationSchema
+
+```ts
+const mediaBindingGenerationSchema: ZodDiscriminatedUnion<[ZodObject<{
+  kind: ZodLiteral<"image">;
+  requestId: ZodLazy<ZodString>;
+  libraryPath: ZodString & ZodType<string, string, $ZodTypeInternals<string, string>>;
+  settings: ZodObject<{
+     model: ZodString;
+     prompt: ZodString;
+     width: ZodNumber;
+     height: ZodNumber;
+     resolution: ZodOptional<ZodEnum<{
+        p480: "480p";
+        p720: "720p";
+        p768: "768p";
+        p1080: "1080p";
+        p4k: "4k";
+     }>>;
+     aspectRatio: ZodOptional<ZodEnum<{
+        wide: "16:9";
+        landscape: "4:3";
+        square: "1:1";
+        portrait: "3:4";
+        tall: "9:16";
+        ultrawide: "21:9";
+        ultratall: "9:21";
+     }>>;
+     generateAudio: ZodOptional<ZodBoolean>;
+     references: ZodOptional<ZodArray<ZodObject<{
+        path: ZodString;
+        role: ZodOptional<...>;
+     }, $strict>>>;
+     steps: ZodOptional<ZodNumber>;
+  }, $strict>;
+  outputFormat: ZodOptional<ZodEnum<{
+     png: "png";
+     jpeg: "jpeg";
+     webp: "webp";
+  }>>;
+}, $strict>, ZodObject<{
+  kind: ZodLiteral<"video">;
+  requestId: ZodLazy<ZodString>;
+  libraryPath: ZodString & ZodType<string, string, $ZodTypeInternals<string, string>>;
+  settings: ZodLazy<ZodObject<{
+     model: ZodEnum<{
+        seedance: "bytedance/seedance-2.0";
+        seedanceFast: "bytedance/seedance-2.0-fast";
+        seedanceMini: "bytedance/seedance-2.0-mini";
+        veo: "google/veo-3.1";
+        veoFast: "google/veo-3.1-fast";
+        minimaxH3Max: "minimax/h3-max";
+     }>;
+     prompt: ZodString;
+     resolution: ZodOptional<ZodEnum<{
+        p480: "480p";
+        p720: "720p";
+        p768: "768p";
+        p1080: "1080p";
+        p4k: "4k";
+     }>>;
+     aspectRatio: ZodOptional<ZodEnum<{
+        wide: "16:9";
+        landscape: "4:3";
+        square: "1:1";
+        portrait: "3:4";
+        tall: "9:16";
+        ultrawide: "21:9";
+        ultratall: "9:21";
+     }>>;
+     durationSeconds: ZodOptional<ZodNumber>;
+     generateAudio: ZodOptional<ZodBoolean>;
+     references: ZodOptional<ZodArray<ZodLazy<ZodObject<..., ...>>>>;
+  }, $strict>>;
+}, $strict>], "kind">;
+```
+
+One generation identity, including the App-owned folder captured for replay.
+
+---
+
+### mediaBindingCallSchema
+
+```ts
+const mediaBindingCallSchema: ZodDiscriminatedUnion<[ZodObject<{
+  operation: ZodLiteral<"models">;
+  input: ZodObject<{
+  }, $strict>;
+}, $strict>, ZodObject<{
+  operation: ZodLiteral<"generate">;
+  input: ZodDiscriminatedUnion<[ZodObject<{
+     kind: ZodLiteral<"image">;
+     requestId: ZodLazy<ZodString>;
+     libraryPath: ZodString & ZodType<string, string, $ZodTypeInternals<..., ...>>;
+     settings: ZodObject<{
+        model: ZodString;
+        prompt: ZodString;
+        width: ZodNumber;
+        height: ZodNumber;
+        resolution: ZodOptional<...>;
+        aspectRatio: ZodOptional<...>;
+        generateAudio: ZodOptional<...>;
+        references: ZodOptional<...>;
+        steps: ZodOptional<...>;
+     }, $strict>;
+     outputFormat: ZodOptional<ZodEnum<{
+        png: ...;
+        jpeg: ...;
+        webp: ...;
+     }>>;
+   }, $strict>, ZodObject<{
+     kind: ZodLiteral<"video">;
+     requestId: ZodLazy<ZodString>;
+     libraryPath: ZodString & ZodType<string, string, $ZodTypeInternals<..., ...>>;
+     settings: ZodLazy<ZodObject<{
+        model: ...;
+        prompt: ...;
+        resolution: ...;
+        aspectRatio: ...;
+        durationSeconds: ...;
+        generateAudio: ...;
+        references: ...;
+     }, $strict>>;
+  }, $strict>], "kind">;
+}, $strict>], "operation">;
+```
+
+Maintained MEDIA method grammar; guest input carries no principal or Computer.
+
+---
+
+### mediaPendingSchema
+
+```ts
+const mediaPendingSchema: ZodLazy<
+  ZodObject<
+    {
+      status: ZodLiteral<"pending">;
+      retryAfterSeconds: ZodNumber;
+    },
+    $strict
+  >
+>;
+```
+
+Background-generation reply emitted by the durable service.
+
+---
+
 ### mediaResultSchema
 
 ```ts
@@ -1454,19 +1801,21 @@ Decode a completed generation, destination path and estimated or settled price.
 ### mediaOperationDestinationSchema
 
 ```ts
-const mediaOperationDestinationSchema: ZodObject<
-  {
-    computerId: ZodString;
-    path: ZodString;
-    outputFormat: ZodOptional<
-      ZodEnum<{
-        png: "png";
-        jpeg: "jpeg";
-        webp: "webp";
-      }>
-    >;
-  },
-  $strict
+const mediaOperationDestinationSchema: ZodLazy<
+  ZodObject<
+    {
+      computerId: ZodString;
+      path: ZodString;
+      outputFormat: ZodOptional<
+        ZodEnum<{
+          png: "png";
+          jpeg: "jpeg";
+          webp: "webp";
+        }>
+      >;
+    },
+    $strict
+  >
 >;
 ```
 
@@ -1512,12 +1861,14 @@ Decode durable generation, save and settlement states.
 ### mediaImageSchema
 
 ```ts
-const mediaImageSchema: ZodObject<
-  {
-    bytes: ZodNumber;
-    format: ZodString;
-  },
-  $strict
+const mediaImageSchema: ZodLazy<
+  ZodObject<
+    {
+      bytes: ZodNumber;
+      format: ZodString;
+    },
+    $strict
+  >
 >;
 ```
 
@@ -1528,14 +1879,16 @@ Decode retained or saved output size and encoding.
 ### mediaOperationResultSchema
 
 ```ts
-const mediaOperationResultSchema: ZodObject<
-  {
-    generationId: ZodString;
-    bytes: ZodNumber;
-    format: ZodString;
-    costMilliunits: ZodNumber;
-  },
-  $strict
+const mediaOperationResultSchema: ZodLazy<
+  ZodObject<
+    {
+      generationId: ZodString;
+      bytes: ZodNumber;
+      format: ZodString;
+      costMilliunits: ZodNumber;
+    },
+    $strict
+  >
 >;
 ```
 
@@ -1558,6 +1911,7 @@ const mediaRequestSchema: ZodObject<{
      resolution: ZodOptional<ZodEnum<{
         p480: "480p";
         p720: "720p";
+        p768: "768p";
         p1080: "1080p";
         p4k: "4k";
      }>>;
@@ -1591,22 +1945,6 @@ const mediaRequestSchema: ZodObject<{
 
 Decode relative service generation input. Identity comes from the host.
 
----
-
-### mediaPendingSchema
-
-```ts
-const mediaPendingSchema: ZodObject<
-  {
-    status: ZodLiteral<"pending">;
-    retryAfterSeconds: ZodNumber;
-  },
-  $strict
->;
-```
-
-A background (video) generation in progress; retry the same request id.
-
 ## Functions
 
 ### mediaUnits()
@@ -1626,6 +1964,140 @@ Billing units for validated settings; video bills its requested length.
 #### Returns
 
 [`MediaUnits`](#mediaunits)
+
+---
+
+### parseMediaBindingCall()
+
+```ts
+function parseMediaBindingCall(raw):
+  | Readonly<{
+      kind: "parsed";
+      call:
+        | {
+            operation: "models";
+            input: Record<string, never>;
+          }
+        | {
+            operation: "generate";
+            input:
+              | {
+                  kind: "image";
+                  requestId: string;
+                  libraryPath: string;
+                  settings: {
+                    model: string;
+                    prompt: string;
+                    width: number;
+                    height: number;
+                    resolution?: "480p" | "720p" | "768p" | "1080p" | "4k";
+                    aspectRatio?:
+                      "16:9" | "4:3" | "1:1" | "3:4" | "9:16" | "21:9" | "9:21";
+                    generateAudio?: boolean;
+                    references?: object[];
+                    steps?: number;
+                  };
+                  outputFormat?: "png" | "jpeg" | "webp";
+                }
+              | {
+                  kind: "video";
+                  requestId: string;
+                  libraryPath: string;
+                  settings: {
+                    model:
+                      | "bytedance/seedance-2.0"
+                      | "bytedance/seedance-2.0-fast"
+                      | "bytedance/seedance-2.0-mini"
+                      | "google/veo-3.1"
+                      | "google/veo-3.1-fast"
+                      | "minimax/h3-max";
+                    prompt: string;
+                    resolution?: "480p" | "720p" | "768p" | "1080p" | "4k";
+                    aspectRatio?:
+                      "16:9" | "4:3" | "1:1" | "3:4" | "9:16" | "21:9" | "9:21";
+                    durationSeconds?: number;
+                    generateAudio?: boolean;
+                    references?: object[];
+                  };
+                };
+          };
+    }>
+  | Readonly<{
+      kind: "refused";
+      result: JSONType;
+    }>;
+```
+
+Parsing and model refusal stay shared; authorization remains host-owned.
+
+#### Parameters
+
+| Parameter | Type       |
+| --------- | ---------- |
+| `raw`     | `JSONType` |
+
+#### Returns
+
+\| `Readonly`\<\{ `kind`: `"parsed"`; `call`: \| \{ `operation`: `"models"`;
+`input`: `Record`\<`string`, `never`\>; \} \| \{ `operation`: `"generate"`;
+`input`: \| \{ `kind`: `"image"`; `requestId`: `string`; `libraryPath`:
+`string`; `settings`: \{ `model`: `string`; `prompt`: `string`; `width`:
+`number`; `height`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \|
+`"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"`
+\| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`:
+`object`[]; `steps?`: `number`; \}; `outputFormat?`: `"png"` \| `"jpeg"` \|
+`"webp"`; \} \| \{ `kind`: `"video"`; `requestId`: `string`; `libraryPath`:
+`string`; `settings`: \{ `model`: \| `"bytedance/seedance-2.0"` \|
+`"bytedance/seedance-2.0-fast"` \| `"bytedance/seedance-2.0-mini"` \|
+`"google/veo-3.1"` \| `"google/veo-3.1-fast"` \| `"minimax/h3-max"`; `prompt`:
+`string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \|
+`"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \|
+`"21:9"` \| `"9:21"`; `durationSeconds?`: `number`; `generateAudio?`: `boolean`;
+`references?`: `object`[]; \}; \}; \}; \}\> \| `Readonly`\<\{ `kind`:
+`"refused"`; `result`: `JSONType`; \}\>
+
+---
+
+### mediaBindingRequest()
+
+```ts
+function mediaBindingRequest(input, computerId): MediaBindingRequest;
+```
+
+Choose the same fixed filename on both hosts without a recursive App lookup.
+
+#### Parameters
+
+| Parameter    | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `input`      | \| \{ `kind`: `"image"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: `string`; `prompt`: `string`; `width`: `number`; `height`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; `steps?`: `number`; \}; `outputFormat?`: `"png"` \| `"jpeg"` \| `"webp"`; \} \| \{ `kind`: `"video"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: \| `"bytedance/seedance-2.0"` \| `"bytedance/seedance-2.0-fast"` \| `"bytedance/seedance-2.0-mini"` \| `"google/veo-3.1"` \| `"google/veo-3.1-fast"` \| `"minimax/h3-max"`; `prompt`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `durationSeconds?`: `number`; `generateAudio?`: `boolean`; `references?`: `object`[]; \}; \} |
+| `computerId` | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+
+#### Returns
+
+[`MediaBindingRequest`](#mediabindingrequest)
+
+---
+
+### readMediaBindingReply()
+
+```ts
+function readMediaBindingReply(input, computerId, response): Promise<JSONType>;
+```
+
+Decode bounded service replies once for both MEDIA host bindings.
+
+#### Parameters
+
+| Parameter    | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `input`      | \| \{ `operation`: `"models"`; `input`: `Record`\<`string`, `never`\>; \} \| \{ `operation`: `"generate"`; `input`: \| \{ `kind`: `"image"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: `string`; `prompt`: `string`; `width`: `number`; `height`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; `steps?`: `number`; \}; `outputFormat?`: `"png"` \| `"jpeg"` \| `"webp"`; \} \| \{ `kind`: `"video"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: \| `"bytedance/seedance-2.0"` \| `"bytedance/seedance-2.0-fast"` \| `"bytedance/seedance-2.0-mini"` \| `"google/veo-3.1"` \| `"google/veo-3.1-fast"` \| `"minimax/h3-max"`; `prompt`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `durationSeconds?`: `number`; `generateAudio?`: `boolean`; `references?`: `object`[]; \}; \}; \} |
+| `computerId` | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `response`   | `Response`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+
+#### Returns
+
+`Promise`\<`JSONType`\>
 
 ---
 

@@ -31,12 +31,17 @@ const mediaBindingLibraryPathSchema = z
   );
 /** Image settings and path references crossing a scoped MEDIA binding. */
 export const mediaImageBindingInputSchema = z.strictObject({
+  /** Select image generation rather than video. */
   kind: z.literal("image"),
+  /** Attempt identity retained through polling and replay. */
   requestId: mediaRequestIdSchema,
+  /** App-owned absolute folder; the host supplies Computer authority. */
   libraryPath: mediaBindingLibraryPathSchema,
+  /** Image model selection, references and inference settings. */
   settings: mediaGenerationSelectionSchema
     .omit({ durationSeconds: true })
     .extend({
+      /** Optional inference-step count for models that support it. */
       steps: z
         .number()
         .int()
@@ -48,13 +53,18 @@ export const mediaImageBindingInputSchema = z.strictObject({
       (settings) => getMediaModel(settings.model)?.kind === "image",
       "Select an image model from listModels",
     ),
+  /** Requested image encoding, validated against the selected model. */
   outputFormat: mediaRequestedImageFormatSchema.optional(),
 });
 /** Video settings and path references crossing the same scoped binding. */
 export const mediaVideoBindingInputSchema = z.strictObject({
+  /** Select video generation rather than an image. */
   kind: z.literal("video"),
+  /** Attempt identity retained through polling and replay. */
   requestId: mediaRequestIdSchema,
+  /** App-owned absolute folder; the host supplies Computer authority. */
   libraryPath: mediaBindingLibraryPathSchema,
+  /** Catalog-backed video model, size, duration and references. */
   settings: mediaVideoSelectionSchema,
 });
 /** One generation identity, including the App-owned folder captured for replay. */
@@ -69,11 +79,15 @@ export type MediaBindingGeneration = z.output<
 /** Maintained MEDIA method grammar; guest input carries no principal or Computer. */
 export const mediaBindingCallSchema = z.discriminatedUnion("operation", [
   z.strictObject({
+    /** Read the model catalog without dispatching generation. */
     operation: z.literal("models"),
+    /** Catalog reads carry no guest authority or generation settings. */
     input: z.strictObject({}),
   }),
   z.strictObject({
+    /** Execute or poll one admitted generation identity. */
     operation: z.literal("generate"),
+    /** The App's captured generation selection and library folder. */
     input: mediaBindingGenerationSchema,
   }),
 ]);
@@ -82,16 +96,26 @@ export type MediaBindingCall = z.output<typeof mediaBindingCallSchema>;
 /** Background-generation reply emitted by the durable service. */
 export const mediaPendingSchema = z.lazy(() =>
   z.strictObject({
+    /** Background work has been accepted but is not yet delivered. */
     status: z.literal("pending"),
+    /** Host-supplied delay before polling the same attempt again. */
     retryAfterSeconds: z.number().int().positive(),
   }),
 );
 /** Parsing and model refusal stay shared; authorization remains host-owned. */
-export function parseMediaBindingCall(
-  raw: Schema.Json,
-):
-  | Readonly<{ kind: "parsed"; call: MediaBindingCall }>
-  | Readonly<{ kind: "refused"; result: z.core.util.JSONType }> {
+export function parseMediaBindingCall(raw: z.core.util.JSONType):
+  | Readonly<{
+      /** The binding input passed its shared grammar. */
+      kind: "parsed";
+      /** Validated command for host admission. */
+      call: MediaBindingCall;
+    }>
+  | Readonly<{
+      /** Input size, grammar or model selection was refused. */
+      kind: "refused";
+      /** Safe refusal returned without provider dispatch. */
+      result: z.core.util.JSONType;
+    }> {
   if (new TextEncoder().encode(JSON.stringify(raw)).byteLength > 64 * 1024)
     return { kind: "refused", result: { error: "too_large" } };
   const parsed = mediaBindingCallSchema.safeParse(raw);
@@ -118,8 +142,11 @@ export function parseMediaBindingCall(
 }
 /** Relative service input after the host attaches its trusted Computer to references. */
 export type MediaBindingRequest = Readonly<{
+  /** Host-selected output filename within the App's library folder. */
   path: string;
+  /** Validated selection with the host's Computer attached to references. */
   settings: MediaGenerationSettings;
+  /** Optional image encoding; video output remains MP4. */
   outputFormat?: z.output<typeof mediaRequestedImageFormatSchema>;
 }>;
 /** Choose the same fixed filename on both hosts without a recursive App lookup. */
@@ -168,14 +195,15 @@ export async function readMediaBindingReply(
   if (!response.ok) {
     const failure = mediaFailureSchema.safeParse(value);
     if (!failure.success) return { error: "unavailable" };
-    return z.json().parse(
-      appMediaBrokerFailureSchema.parse({
-        error: failure.data.code,
-        message: failure.data.error,
-        stage: failure.data.stage,
-        retryable: failure.data.retryable,
-      }),
-    );
+    const projected: z.input<typeof appMediaBrokerFailureSchema> = {
+      error: failure.data.code,
+      message: failure.data.error,
+      stage: failure.data.stage,
+      retryable: failure.data.retryable,
+    };
+    if (failure.data.provider !== undefined)
+      projected.provider = failure.data.provider;
+    return z.json().parse(appMediaBrokerFailureSchema.parse(projected));
   }
   if (input.operation === "models")
     return z.json().parse(mediaModelsSchema.parse(value));

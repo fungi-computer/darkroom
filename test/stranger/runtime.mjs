@@ -157,7 +157,7 @@ const operations = {
             kv.clear();
             database.exec("DROP TABLE hub_media_operation");
             database.exec("DROP TABLE hub_media_spent_failure");
-            database.exec("DROP TABLE hub_media_provider_refusal");
+            database.exec("DROP TABLE hub_media_provider_failure");
           },
         },
       },

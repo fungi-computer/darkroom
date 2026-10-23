@@ -13,7 +13,7 @@
 ### mediaModelsSchema
 
 ```ts
-const mediaModelsSchema: ZodArray<ZodReadonly<ZodObject<{
+const mediaModelsSchema: ZodLazy<ZodArray<ZodReadonly<ZodObject<{
   id: ZodString;
   label: ZodString;
   kind: ZodEnum<{
@@ -31,62 +31,46 @@ const mediaModelsSchema: ZodArray<ZodReadonly<ZodObject<{
      jpeg: "jpeg";
      webp: "webp";
   }>>>;
-  input: ZodReadonly<ZodObject<{
+  input: ZodLazy<ZodReadonly<ZodObject<{
      transport: ZodEnum<{
-        json: "json";
-        multipart: "multipart";
+        json: ...;
+        multipart: ...;
      }>;
      dimensions: ZodEnum<{
-        none: "none";
-        own: "own";
+        none: ...;
+        own: ...;
      }>;
      maxDimension: ZodNullable<ZodNumber>;
      defaultWidth: ZodNumber;
      defaultHeight: ZodNumber;
      steps: ZodEnum<{
-        steps: "steps";
-        num_steps: "num_steps";
-        fixed: "fixed";
+        steps: ...;
+        num_steps: ...;
+        fixed: ...;
      }>;
      maxSteps: ZodNullable<ZodNumber>;
      defaultSteps: ZodNullable<ZodNumber>;
      referenceField: ZodNullable<ZodString>;
      maxReferences: ZodNumber;
-  }, $strict>>;
+  }, $strict>>>;
   sizes: ZodNullable<ZodReadonly<ZodArray<ZodString>>>;
-  video: ZodNullable<ZodReadonly<ZodObject<{
+  video: ZodNullable<ZodLazy<ZodReadonly<ZodObject<{
      minSeconds: ZodNumber;
      maxSeconds: ZodNumber;
      defaultSeconds: ZodNumber;
-     durations: ZodReadonly<ZodArray<ZodNumber>>;
-     provider: ZodEnum<{
-        seedance: "seedance";
-        veo: "veo";
-     }>;
-     formats: ZodReadonly<ZodArray<ZodReadonly<...>>>;
-     defaultResolution: ZodEnum<{
-        p480: "480p";
-        p720: "720p";
-        p1080: "1080p";
-        p4k: "4k";
-     }>;
-     defaultAspectRatio: ZodEnum<{
-        wide: "16:9";
-        landscape: "4:3";
-        square: "1:1";
-        portrait: "3:4";
-        tall: "9:16";
-        ultrawide: "21:9";
-        ultratall: "9:21";
-     }>;
-     defaultGenerateAudio: ZodNullable<ZodBoolean>;
+     durations: ZodReadonly<...>;
+     provider: ZodEnum<...>;
+     formats: ZodReadonly<...>;
+     defaultResolution: ZodEnum<...>;
+     defaultAspectRatio: ZodEnum<...>;
+     defaultGenerateAudio: ZodNullable<...>;
      maxPromptLength: ZodNumber;
-     referenceRoles: ZodReadonly<ZodArray<ZodEnum<...>>>;
+     referenceRoles: ZodReadonly<...>;
      maxReferenceImages: ZodNumber;
-     referenceResolutions: ZodReadonly<ZodArray<ZodEnum<...>>>;
-     prices: ZodReadonly<ZodArray<ZodReadonly<...>>>;
-  }, $strict>>>;
-}, $strict>>>;
+     referenceResolutions: ZodReadonly<...>;
+     prices: ZodReadonly<...>;
+  }, $strict>>>>;
+}, $strict>>>>;
 ```
 
 Bounded catalog decoded by the App media broker before host filtering.
@@ -165,13 +149,15 @@ Authority refusals emitted by Media admission before a host call.
 ### appMediaBudgetRefusalSchema
 
 ```ts
-const appMediaBudgetRefusalSchema: ZodObject<
-  {
-    error: ZodLiteral<"attachment_budget_exceeded">;
-    kind: ZodLiteral<"media">;
-    retryAfterMs: ZodNumber;
-  },
-  $strict
+const appMediaBudgetRefusalSchema: ZodLazy<
+  ZodObject<
+    {
+      error: ZodLiteral<"attachment_budget_exceeded">;
+      kind: ZodLiteral<"media">;
+      retryAfterMs: ZodNumber;
+    },
+    $strict
+  >
 >;
 ```
 
@@ -195,13 +181,15 @@ const appMediaAdmissionRefusalSchema: ZodUnion<
       },
       $strict
     >,
-    ZodObject<
-      {
-        error: ZodLiteral<"attachment_budget_exceeded">;
-        kind: ZodLiteral<"media">;
-        retryAfterMs: ZodNumber;
-      },
-      $strict
+    ZodLazy<
+      ZodObject<
+        {
+          error: ZodLiteral<"attachment_budget_exceeded">;
+          kind: ZodLiteral<"media">;
+          retryAfterMs: ZodNumber;
+        },
+        $strict
+      >
     >,
   ]
 >;
@@ -236,12 +224,14 @@ Admission errors plus invalid/oversized inputs emitted directly by the broker.
 ### agentAppMediaLibraryFailureSchema
 
 ```ts
-const agentAppMediaLibraryFailureSchema: ZodObject<
-  {
-    error: ZodLiteral<"library_unavailable">;
-    message: ZodString;
-  },
-  $strict
+const agentAppMediaLibraryFailureSchema: ZodLazy<
+  ZodObject<
+    {
+      error: ZodLiteral<"library_unavailable">;
+      message: ZodString;
+    },
+    $strict
+  >
 >;
 ```
 
@@ -275,6 +265,20 @@ const appMediaBrokerFailureSchema: ZodObject<{
      destination-write: "destination-write";
   }>;
   retryable: ZodBoolean;
+  provider: ZodOptional<ZodPipe<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodTransform<
+     | Readonly<{
+     category:   | "InferenceUpstreamError"
+        | "AiInternalError"
+        | "TypeError"
+        | "AbortError"
+        | "TimeoutError"
+        | "Error";
+     code: number | null;
+   }>
+     | Readonly<{
+     category: "result_download";
+     status: number;
+  }>, unknown>>>;
 }, $strict>;
 ```
 
@@ -295,14 +299,14 @@ const appMediaRefusalSchema: ZodUnion<readonly [ZodObject<{
      invalid: "invalid";
      too_large: "too_large";
   }>;
-}, $strict>, ZodObject<{
+}, $strict>, ZodLazy<ZodObject<{
   error: ZodLiteral<"attachment_budget_exceeded">;
   kind: ZodLiteral<"media">;
   retryAfterMs: ZodNumber;
-}, $strict>, ZodObject<{
+}, $strict>>, ZodLazy<ZodObject<{
   error: ZodLiteral<"library_unavailable">;
   message: ZodString;
-}, $strict>, ZodObject<{
+}, $strict>>, ZodObject<{
   error: ZodEnum<{
      CAPABILITY_DENIED: "CAPABILITY_DENIED";
      INSUFFICIENT_CREDIT: "INSUFFICIENT_CREDIT";
@@ -325,6 +329,15 @@ const appMediaRefusalSchema: ZodUnion<readonly [ZodObject<{
      destination-write: "destination-write";
   }>;
   retryable: ZodBoolean;
+  provider: ZodOptional<ZodPipe<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodTransform<
+     | Readonly<{
+     category: ... | ... | ... | ... | ... | ...;
+     code: ... | ...;
+   }>
+     | Readonly<{
+     category: "result_download";
+     status: number;
+  }>, unknown>>>;
 }, $strict>]>;
 ```
 
@@ -336,7 +349,7 @@ errors.
 ### appMediaModelsOutcomeSchema
 
 ```ts
-const appMediaModelsOutcomeSchema: ZodUnion<readonly [ZodArray<ZodReadonly<ZodObject<{
+const appMediaModelsOutcomeSchema: ZodUnion<readonly [ZodLazy<ZodArray<ZodReadonly<ZodObject<{
   id: ZodString;
   label: ZodString;
   kind: ZodEnum<{
@@ -350,50 +363,25 @@ const appMediaModelsOutcomeSchema: ZodUnion<readonly [ZodArray<ZodReadonly<ZodOb
      max: "max";
   }>;
   outputFormats: ZodReadonly<ZodArray<ZodEnum<{
-     png: "png";
-     jpeg: "jpeg";
-     webp: "webp";
+     png: ...;
+     jpeg: ...;
+     webp: ...;
   }>>>;
-  input: ZodReadonly<ZodObject<{
-     transport: ZodEnum<{
-        json: ...;
-        multipart: ...;
-     }>;
-     dimensions: ZodEnum<{
-        none: ...;
-        own: ...;
-     }>;
-     maxDimension: ZodNullable<ZodNumber>;
-     defaultWidth: ZodNumber;
-     defaultHeight: ZodNumber;
-     steps: ZodEnum<{
-        steps: ...;
-        num_steps: ...;
-        fixed: ...;
-     }>;
-     maxSteps: ZodNullable<ZodNumber>;
-     defaultSteps: ZodNullable<ZodNumber>;
-     referenceField: ZodNullable<ZodString>;
-     maxReferences: ZodNumber;
-  }, $strict>>;
-  sizes: ZodNullable<ZodReadonly<ZodArray<ZodString>>>;
-  video: ZodNullable<ZodReadonly<ZodObject<{
-     minSeconds: ZodNumber;
-     maxSeconds: ZodNumber;
-     defaultSeconds: ZodNumber;
-     durations: ZodReadonly<...>;
-     provider: ZodEnum<...>;
-     formats: ZodReadonly<...>;
-     defaultResolution: ZodEnum<...>;
-     defaultAspectRatio: ZodEnum<...>;
-     defaultGenerateAudio: ZodNullable<...>;
-     maxPromptLength: ZodNumber;
-     referenceRoles: ZodReadonly<...>;
-     maxReferenceImages: ZodNumber;
-     referenceResolutions: ZodReadonly<...>;
-     prices: ZodReadonly<...>;
+  input: ZodLazy<ZodReadonly<ZodObject<{
+     transport: ...;
+     dimensions: ...;
+     maxDimension: ...;
+     defaultWidth: ...;
+     defaultHeight: ...;
+     steps: ...;
+     maxSteps: ...;
+     defaultSteps: ...;
+     referenceField: ...;
+     maxReferences: ...;
   }, $strict>>>;
-}, $strict>>>, ZodUnion<readonly [ZodObject<{
+  sizes: ZodNullable<ZodReadonly<ZodArray<ZodString>>>;
+  video: ZodNullable<ZodLazy<ZodReadonly<ZodObject<..., ...>>>>;
+}, $strict>>>>, ZodUnion<readonly [ZodObject<{
   error: ZodEnum<{
      revoked: "revoked";
      not_granted: "not_granted";
@@ -402,14 +390,14 @@ const appMediaModelsOutcomeSchema: ZodUnion<readonly [ZodArray<ZodReadonly<ZodOb
      invalid: "invalid";
      too_large: "too_large";
   }>;
-}, $strict>, ZodObject<{
+}, $strict>, ZodLazy<ZodObject<{
   error: ZodLiteral<"attachment_budget_exceeded">;
   kind: ZodLiteral<"media">;
   retryAfterMs: ZodNumber;
-}, $strict>, ZodObject<{
+}, $strict>>, ZodLazy<ZodObject<{
   error: ZodLiteral<"library_unavailable">;
   message: ZodString;
-}, $strict>, ZodObject<{
+}, $strict>>, ZodObject<{
   error: ZodEnum<{
      CAPABILITY_DENIED: "CAPABILITY_DENIED";
      INSUFFICIENT_CREDIT: "INSUFFICIENT_CREDIT";
@@ -432,6 +420,7 @@ const appMediaModelsOutcomeSchema: ZodUnion<readonly [ZodArray<ZodReadonly<ZodOb
      destination-write: "destination-write";
   }>;
   retryable: ZodBoolean;
+  provider: ZodOptional<ZodPipe<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodTransform<Readonly<...> | Readonly<...>, unknown>>>;
 }, $strict>]>]>;
 ```
 
@@ -471,14 +460,14 @@ const appMediaGenerationOutcomeSchema: ZodUnion<readonly [ZodObject<{
      invalid: "invalid";
      too_large: "too_large";
   }>;
-}, $strict>, ZodObject<{
+}, $strict>, ZodLazy<ZodObject<{
   error: ZodLiteral<"attachment_budget_exceeded">;
   kind: ZodLiteral<"media">;
   retryAfterMs: ZodNumber;
-}, $strict>, ZodObject<{
+}, $strict>>, ZodLazy<ZodObject<{
   error: ZodLiteral<"library_unavailable">;
   message: ZodString;
-}, $strict>, ZodObject<{
+}, $strict>>, ZodObject<{
   error: ZodEnum<{
      CAPABILITY_DENIED: "CAPABILITY_DENIED";
      INSUFFICIENT_CREDIT: "INSUFFICIENT_CREDIT";
@@ -501,6 +490,7 @@ const appMediaGenerationOutcomeSchema: ZodUnion<readonly [ZodObject<{
      destination-write: "destination-write";
   }>;
   retryable: ZodBoolean;
+  provider: ZodOptional<ZodPipe<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodTransform<Readonly<...> | Readonly<...>, unknown>>>;
 }, $strict>]>]>;
 ```
 

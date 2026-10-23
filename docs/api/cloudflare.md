@@ -63,7 +63,12 @@ read(...input):
      | "succeeded"
      | "interrupted";
   spentFailure: "output_format_mismatch" | null;
-  providerRefusal: "safety_filter_refused" | null;
+  providerFailure:   | Readonly<{
+     stage: "provider" | "normalization";
+     safetyRefused: boolean;
+     provider?: MediaProviderDiagnostic;
+   }>
+     | null;
   estimatedCostMilliunits: number | null;
   image:   | {
      bytes: number;
@@ -98,11 +103,12 @@ erasure.
 `string`; `owner`: `string`; `state`: \| `"admitted"` \| `"estimating"` \|
 `"generating"` \| `"writing"` \| `"charging"` \| `"written"` \| `"succeeded"` \|
 `"interrupted"`; `spentFailure`: `"output_format_mismatch"` \| `null`;
-`providerRefusal`: `"safety_filter_refused"` \| `null`;
-`estimatedCostMilliunits`: `number` \| `null`; `image`: \| \{ `bytes`: `number`;
-`format`: `string`; \} \| `null`; `result`: \| \{ `generationId`: `string`;
-`bytes`: `number`; `format`: `string`; `costMilliunits`: `number`; \} \| `null`;
-`createdAt`: `number`; `updatedAt`: `number`; \}\> \| `null`
+`providerFailure`: \| `Readonly`\<\{ `stage`: `"provider"` \| `"normalization"`;
+`safetyRefused`: `boolean`; `provider?`: `MediaProviderDiagnostic`; \}\> \|
+`null`; `estimatedCostMilliunits`: `number` \| `null`; `image`: \| \{ `bytes`:
+`number`; `format`: `string`; \} \| `null`; `result`: \| \{ `generationId`:
+`string`; `bytes`: `number`; `format`: `string`; `costMilliunits`: `number`; \}
+\| `null`; `createdAt`: `number`; `updatedAt`: `number`; \}\> \| `null`
 
 ##### preflightErasure()
 
@@ -248,7 +254,12 @@ dispatchInBackground(...input): Promise<Readonly<{
      | "succeeded"
      | "interrupted";
   spentFailure: "output_format_mismatch" | null;
-  providerRefusal: "safety_filter_refused" | null;
+  providerFailure:   | Readonly<{
+     stage: "provider" | "normalization";
+     safetyRefused: boolean;
+     provider?: MediaProviderDiagnostic;
+   }>
+     | null;
   estimatedCostMilliunits: number | null;
   image:   | {
      bytes: number;
@@ -283,11 +294,13 @@ output, and releases the lease so a later retry saves and charges it.
 `namespace`: `string`; `owner`: `string`; `state`: \| `"admitted"` \|
 `"estimating"` \| `"generating"` \| `"writing"` \| `"charging"` \| `"written"`
 \| `"succeeded"` \| `"interrupted"`; `spentFailure`: `"output_format_mismatch"`
-\| `null`; `providerRefusal`: `"safety_filter_refused"` \| `null`;
-`estimatedCostMilliunits`: `number` \| `null`; `image`: \| \{ `bytes`: `number`;
-`format`: `string`; \} \| `null`; `result`: \| \{ `generationId`: `string`;
-`bytes`: `number`; `format`: `string`; `costMilliunits`: `number`; \} \| `null`;
-`createdAt`: `number`; `updatedAt`: `number`; \}\>\>
+\| `null`; `providerFailure`: \| `Readonly`\<\{ `stage`: `"provider"` \|
+`"normalization"`; `safetyRefused`: `boolean`; `provider?`:
+`MediaProviderDiagnostic`; \}\> \| `null`; `estimatedCostMilliunits`: `number`
+\| `null`; `image`: \| \{ `bytes`: `number`; `format`: `string`; \} \| `null`;
+`result`: \| \{ `generationId`: `string`; `bytes`: `number`; `format`: `string`;
+`costMilliunits`: `number`; \} \| `null`; `createdAt`: `number`; `updatedAt`:
+`number`; \}\>\>
 
 ##### alarm()
 
@@ -323,9 +336,9 @@ An aborted in-flight provider call is terminal for this request ID.
 
 ###### Parameters
 
-| Parameter  | Type                                    | Description |
-| ---------- | --------------------------------------- | ----------- |
-| ...`input` | \[`string`, `"safety_filter_refused"`\] | -           |
+| Parameter  | Type                                                                                                                                              | Description |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| ...`input` | \[`string`, `Readonly`\<\{ `stage`: `"provider"` \| `"normalization"`; `safetyRefused`: `boolean`; `provider?`: `MediaProviderDiagnostic`; \}\>\] | -           |
 
 ###### Returns
 
@@ -461,16 +474,6 @@ Release preparation or refused admission so the same request can retry.
 
 ## Type Aliases
 
-### MediaAiResult
-
-```ts
-type MediaAiResult = Awaited<ReturnType<Ai["run"]>> | MediaProviderWire;
-```
-
-Native Workers AI output or an already decoded provider representation.
-
----
-
 ### MediaAiPort
 
 ```ts
@@ -503,7 +506,7 @@ Dispatch to the native Workers AI binding.
 
 ###### Returns
 
-`Promise`\<[`MediaAiResult`](#mediaairesult)\>
+`Promise`\<[`MediaAiResult`](index.md#mediaairesult)\>
 
 ---
 
@@ -646,6 +649,12 @@ Re-exports [MediaOperationCoordinates](server.md#mediaoperationcoordinates)
 ### MediaOperationRequest
 
 Re-exports [MediaOperationRequest](server.md#mediaoperationrequest)
+
+---
+
+### MediaAiResult
+
+Re-exports [MediaAiResult](index.md#mediaairesult)
 
 ---
 

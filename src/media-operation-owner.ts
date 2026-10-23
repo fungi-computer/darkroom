@@ -12,9 +12,22 @@ import type {
 } from "./media-operation-storage.js";
 import type { MediaProvider, MediaReferenceBytes } from "./index.js";
 import { reportCatchFailure } from "./failure.js";
-import { MediaSafetyFilterRefusal } from "./execution-error.js";
+import {
+  MediaExecutionError,
+  MediaSafetyFilterRefusal,
+  mediaFailureStageSchema,
+  type MediaFailureStage,
+} from "./execution-error.js";
+import {
+  mediaProviderDiagnosticWireSchema,
+  type MediaProviderDiagnostic,
+} from "@fungi.computer/agar/errors";
 
-const providerRefusalSchema = z.literal("safety_filter_refused");
+const providerFailureSchema = z.strictObject({
+  stage: mediaFailureStageSchema.extract(["provider", "normalization"]),
+  safetyRefused: z.boolean(),
+  provider: mediaProviderDiagnosticWireSchema.optional(),
+});
 
 const ids = defineIdFamily({
   family: "hub-media-operation",
@@ -168,8 +181,15 @@ export type MediaOperationProjection = Readonly<{
   state: MediaOperationState;
   /** Terminal format mismatch after provider execution. */
   spentFailure: "output_format_mismatch" | null;
-  /** Definitive provider refusal with no delivered or billable output. */
-  providerRefusal: "safety_filter_refused" | null;
+  /** Safe terminal provider failure; no original cause or provider message. */
+  providerFailure: Readonly<{
+    /** Provider dispatch or output normalization, not a save failure. */
+    stage: Extract<MediaFailureStage, "provider" | "normalization">;
+    /** Preserve the model's safety refusal classification on replay. */
+    safetyRefused: boolean;
+    /** Allowlisted facts only; never the original error message or cause. */
+    provider?: MediaProviderDiagnostic | undefined;
+  }> | null;
   /** Pinned host price or unmetered quote. */
   estimatedCostMilliunits: number | null;
   /** Retained or saved image metadata. */
@@ -305,7 +325,7 @@ const schemaStatements = [
     dispatched_at INTEGER
   ) STRICT`,
   "CREATE TABLE hub_media_spent_failure (singleton INTEGER PRIMARY KEY CHECK(singleton=1),code TEXT NOT NULL CHECK(code='output_format_mismatch')) STRICT",
-  "CREATE TABLE hub_media_provider_refusal (singleton INTEGER PRIMARY KEY CHECK(singleton=1),code TEXT NOT NULL CHECK(code='safety_filter_refused')) STRICT",
+  "CREATE TABLE hub_media_provider_failure (singleton INTEGER PRIMARY KEY CHECK(singleton=1),failure_json TEXT NOT NULL) STRICT",
 ] as const;
 
 function fingerprint(input: MediaOperationRequest): string {
@@ -395,9 +415,9 @@ export class MediaOperationOwner {
         this.ctx.storage.sql.exec(statement);
     } else {
       // Pre-launch stores use the current fresh schema or get reset by the host.
-      // Missing refusal facts are not healed or incrementally migrated here.
+      // Missing failure facts are not healed or incrementally migrated here.
       this.ctx.storage.sql.exec(
-        "SELECT code FROM hub_media_provider_refusal LIMIT 0",
+        "SELECT failure_json FROM hub_media_provider_failure LIMIT 0",
       );
     }
     this.initialized = true;
@@ -470,13 +490,20 @@ export class MediaOperationOwner {
               code: z.literal("output_format_mismatch"),
             })
             .parse(failure).code;
-    const refusal = this.ctx.storage.sql
-      .exec("SELECT code FROM hub_media_provider_refusal WHERE singleton=1")
+    const failureRow = this.ctx.storage.sql
+      .exec(
+        "SELECT failure_json FROM hub_media_provider_failure WHERE singleton=1",
+      )
       .toArray()[0];
-    const providerRefusal =
-      refusal === undefined
+    const providerFailure =
+      failureRow === undefined
         ? null
-        : z.strictObject({ code: providerRefusalSchema }).parse(refusal).code;
+        : this.decodeJson(
+            z
+              .strictObject({ failure_json: z.string().max(1024) })
+              .parse(failureRow).failure_json,
+            providerFailureSchema,
+          );
     return Object.freeze({
       operationId: record.operationId,
       requestId: record.requestId,
@@ -484,7 +511,7 @@ export class MediaOperationOwner {
       owner: record.owner,
       state: record.state,
       spentFailure,
-      providerRefusal,
+      providerFailure,
       estimatedCostMilliunits: record.estimatedCostMilliunits,
       image: record.image,
       result: record.result,
@@ -991,8 +1018,13 @@ export class MediaOperationOwner {
       try {
         this.interruptGeneration(
           leaseId,
-          cause instanceof MediaSafetyFilterRefusal
-            ? "safety_filter_refused"
+          cause instanceof MediaExecutionError &&
+            (cause.stage === "provider" || cause.stage === "normalization")
+            ? {
+                stage: cause.stage,
+                safetyRefused: cause instanceof MediaSafetyFilterRefusal,
+                provider: cause.provider,
+              }
             : undefined,
         );
       } catch (cause) {
@@ -1019,9 +1051,9 @@ export class MediaOperationOwner {
   /** An aborted in-flight provider call is terminal for this request ID. */
   public interruptGeneration(
     leaseId: string,
-    refusalInput?: NonNullable<MediaOperationProjection["providerRefusal"]>,
+    failureInput?: NonNullable<MediaOperationProjection["providerFailure"]>,
   ): MediaOperationProjection {
-    const refusal = providerRefusalSchema.optional().parse(refusalInput);
+    const failure = providerFailureSchema.optional().parse(failureInput);
     const record = this.requireRecord();
     if (record.state !== "generating" || record.leaseId !== leaseId)
       throw new MediaOperationError("lease_lost");
@@ -1038,10 +1070,10 @@ export class MediaOperationOwner {
         writeReceipt: null,
         result: null,
       });
-      if (refusal !== undefined)
+      if (failure !== undefined)
         this.ctx.storage.sql.exec(
-          "INSERT INTO hub_media_provider_refusal(singleton,code) VALUES(1,?)",
-          refusal,
+          "INSERT INTO hub_media_provider_failure(singleton,failure_json) VALUES(1,?)",
+          JSON.stringify(failure),
         );
       return this.project(interrupted);
     });

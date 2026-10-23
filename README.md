@@ -156,9 +156,18 @@ Agar's public `pendingSchema`. `appMediaModelsOutcomeSchema` and
 closed admission codes, the Media attachment-budget refusal, the existing
 `agentAppMediaLibraryFailureSchema`, and `appMediaBrokerFailureSchema`. The
 latter preserves the broker projection: HTTP `code` becomes `error`, HTTP
-`error` becomes `message`, and `stage` and `retryable` stay unchanged. HTTP
-failures and transport envelopes are separate representations and do not decode
-as these outcomes.
+`error` becomes `message`, and `stage`, `retryable` and optional `provider`
+facts stay unchanged. HTTP failures and transport envelopes are separate
+representations and do not decode as these outcomes.
+
+Provider facts use Agar's canonical Media grammar: an allowlisted error category
+and bounded numeric code, or `result_download` and a native HTTP status. The
+durable owner retains those facts through interruption and replay, including
+safety refusals, without retaining the original error message or cause in the
+failure record. A terminal provider failure never redispatches the paid attempt.
+The fresh pre-release schema replaces the safety-only refusal table; old preview
+stores require an explicit host reset, not an automatic migration or dual
+reader.
 
 See the [generated API](docs/api/README.md) for signatures and host ports. The
 Cloudflare entry needs the native Workers type declarations in a TypeScript

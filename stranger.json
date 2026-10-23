@@ -24,8 +24,12 @@
     "package/dist/failure.js",
     "package/dist/gateway-models.d.ts",
     "package/dist/gateway-models.js",
+    "package/dist/gateway-wire.d.ts",
+    "package/dist/gateway-wire.js",
     "package/dist/index.d.ts",
     "package/dist/index.js",
+    "package/dist/media-binding.d.ts",
+    "package/dist/media-binding.js",
     "package/dist/media-generation.d.ts",
     "package/dist/media-generation.js",
     "package/dist/media-operation-contract.d.ts",
@@ -56,6 +60,16 @@
     "package/dist/provenance.js",
     "package/dist/server.d.ts",
     "package/dist/server.js",
+    "package/dist/video-providers/index.d.ts",
+    "package/dist/video-providers/index.js",
+    "package/dist/video-providers/minimax.d.ts",
+    "package/dist/video-providers/minimax.js",
+    "package/dist/video-providers/reference-encoding.d.ts",
+    "package/dist/video-providers/reference-encoding.js",
+    "package/dist/video-providers/types.d.ts",
+    "package/dist/video-providers/types.js",
+    "package/dist/video-providers/unified.d.ts",
+    "package/dist/video-providers/unified.js",
     "package/docs/api/README.md",
     "package/docs/api/app-media-contracts.md",
     "package/docs/api/browser.md",
@@ -67,9 +81,18 @@
     "package/docs/api/server.md",
     "package/package.json"
   ],
-  "localDependencies": ["../agar", "../cairn"],
+  "localDependencies": [
+    "../../forks/capnweb",
+    "../../forks/ts-webp",
+    "../agar",
+    "../cairn"
+  ],
   "runtimeFixture": "test/stranger/runtime.mjs",
-  "typecheckFixture": "test/stranger/consumer.mts",
+  "typechecks": [
+    {
+      "fixture": "test/stranger/consumer.mts"
+    }
+  ],
   "docs": {
     "sigil": "generateMedia",
     "home": {

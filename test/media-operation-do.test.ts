@@ -94,7 +94,7 @@ describe("MediaOperationOwner internal durable owner", () => {
   it("refuses an old disposable schema instead of adding the new refusal fact", async () => {
     const test = fixture();
     await Promise.resolve();
-    test.storage.sql.exec("DROP TABLE hub_media_provider_refusal");
+    test.storage.sql.exec("DROP TABLE hub_media_provider_failure");
     let initialization: Promise<void> = Promise.resolve();
     const owner = new MediaOperationOwner(
       {
@@ -109,10 +109,10 @@ describe("MediaOperationOwner internal durable owner", () => {
     );
     try {
       await expect(initialization).rejects.toThrow(
-        "no such table: hub_media_provider_refusal",
+        "no such table: hub_media_provider_failure",
       );
       expect(() => owner.read()).toThrow(
-        "no such table: hub_media_provider_refusal",
+        "no such table: hub_media_provider_failure",
       );
     } finally {
       test.close();
@@ -787,7 +787,7 @@ describe("MediaOperationOwner internal durable owner", () => {
       },
     );
 
-    it("explains a Workers AI safety refusal without exposing provider details or charging", async () => {
+    it("explains a Workers AI safety refusal with safe facts but no private details or charging", async () => {
       const test = fixture();
       const billing = ledger();
       const write = vi.fn(() => Promise.resolve());
@@ -841,6 +841,7 @@ describe("MediaOperationOwner internal durable owner", () => {
           stage: "provider",
           code: "SAFETY_FILTER_REFUSED",
           retryable: false,
+          provider: { category: "Error", code: 8007 },
         });
         expect(billing.charges.get("media-operation-a")).toBe(0);
         expect(billing.holds.size).toBe(0);
@@ -851,6 +852,7 @@ describe("MediaOperationOwner internal durable owner", () => {
         await expect(readMediaFailure(replay)).resolves.toMatchObject({
           code: "SAFETY_FILTER_REFUSED",
           retryable: false,
+          provider: { category: "Error", code: 8007 },
         });
         expect(run).toHaveBeenCalledOnce();
         expect(JSON.stringify(report.mock.calls)).not.toContain(marker);
@@ -1045,6 +1047,7 @@ describe("MediaOperationOwner internal durable owner", () => {
           stage: "provider",
           code: "SAFETY_FILTER_REFUSED",
           retryable: false,
+          provider: { category: "Error", code: null },
         });
         expect(
           (await service.request("/generate", generationRequest)).status,
@@ -1193,7 +1196,10 @@ describe("MediaOperationOwner internal durable owner", () => {
       expect(test.owner.read()).toMatchObject({ state: "interrupted" });
       await expect(
         executeVideo(test.owner, billing.metering, write),
-      ).resolves.toEqual({ kind: "unavailable" });
+      ).rejects.toMatchObject({
+        stage: "provider",
+        provider: { category: "Error", code: 3040 },
+      });
       expect(billing.settlements).toEqual([
         { operationId: "media-operation-a", units: 0 },
       ]);

@@ -444,6 +444,16 @@ Supported raw provider representations, decoded by mediaProviderWireSchema.
 
 ---
 
+### MediaAiResult
+
+```ts
+type MediaAiResult = Awaited<ReturnType<Ai["run"]>> | MediaProviderWire;
+```
+
+Native Workers AI output or an already decoded provider representation.
+
+---
+
 ### MediaProviderOutputOptions
 
 ```ts
@@ -618,7 +628,7 @@ Maximum long-edge size accepted by an image viewer, in pixels.
 ### viewDimensionSchema
 
 ```ts
-const viewDimensionSchema: ZodNumber;
+const viewDimensionSchema: ZodLazy<ZodNumber>;
 ```
 
 Decode a viewer long-edge size within the supported pixel bounds.
@@ -680,6 +690,7 @@ const mediaGenerationSettingsSchema: ZodObject<
       ZodEnum<{
         p480: "480p";
         p720: "720p";
+        p768: "768p";
         p1080: "1080p";
         p4k: "4k";
       }>
@@ -738,6 +749,7 @@ const mediaGenerationSelectionSchema: ZodObject<
       ZodEnum<{
         p480: "480p";
         p720: "720p";
+        p768: "768p";
         p1080: "1080p";
         p4k: "4k";
       }>
@@ -783,16 +795,18 @@ App selections contain paths; the host supplies the admitted Computer.
 ### mediaVideoReferenceSchema
 
 ```ts
-const mediaVideoReferenceSchema: ZodObject<
-  {
-    path: ZodString;
-    role: ZodEnum<{
-      first: "first-frame";
-      last: "last-frame";
-      reference: "reference";
-    }>;
-  },
-  $strict
+const mediaVideoReferenceSchema: ZodLazy<
+  ZodObject<
+    {
+      path: ZodString;
+      role: ZodEnum<{
+        first: "first-frame";
+        last: "last-frame";
+        reference: "reference";
+      }>;
+    },
+    $strict
+  >
 >;
 ```
 
@@ -803,54 +817,60 @@ Path-only video reference; the host supplies authority and reads its bytes.
 ### mediaVideoSelectionSchema
 
 ```ts
-const mediaVideoSelectionSchema: ZodObject<
-  {
-    model: ZodEnum<{
-      seedance: "bytedance/seedance-2.0";
-      seedanceFast: "bytedance/seedance-2.0-fast";
-      seedanceMini: "bytedance/seedance-2.0-mini";
-      veo: "google/veo-3.1";
-      veoFast: "google/veo-3.1-fast";
-    }>;
-    prompt: ZodString;
-    resolution: ZodOptional<
-      ZodEnum<{
-        p480: "480p";
-        p720: "720p";
-        p1080: "1080p";
-        p4k: "4k";
-      }>
-    >;
-    aspectRatio: ZodOptional<
-      ZodEnum<{
-        wide: "16:9";
-        landscape: "4:3";
-        square: "1:1";
-        portrait: "3:4";
-        tall: "9:16";
-        ultrawide: "21:9";
-        ultratall: "9:21";
-      }>
-    >;
-    durationSeconds: ZodOptional<ZodNumber>;
-    generateAudio: ZodOptional<ZodBoolean>;
-    references: ZodOptional<
-      ZodArray<
-        ZodObject<
-          {
-            path: ZodString;
-            role: ZodEnum<{
-              first: "first-frame";
-              last: "last-frame";
-              reference: "reference";
-            }>;
-          },
-          $strict
+const mediaVideoSelectionSchema: ZodLazy<
+  ZodObject<
+    {
+      model: ZodEnum<{
+        seedance: "bytedance/seedance-2.0";
+        seedanceFast: "bytedance/seedance-2.0-fast";
+        seedanceMini: "bytedance/seedance-2.0-mini";
+        veo: "google/veo-3.1";
+        veoFast: "google/veo-3.1-fast";
+        minimaxH3Max: "minimax/h3-max";
+      }>;
+      prompt: ZodString;
+      resolution: ZodOptional<
+        ZodEnum<{
+          p480: "480p";
+          p720: "720p";
+          p768: "768p";
+          p1080: "1080p";
+          p4k: "4k";
+        }>
+      >;
+      aspectRatio: ZodOptional<
+        ZodEnum<{
+          wide: "16:9";
+          landscape: "4:3";
+          square: "1:1";
+          portrait: "3:4";
+          tall: "9:16";
+          ultrawide: "21:9";
+          ultratall: "9:21";
+        }>
+      >;
+      durationSeconds: ZodOptional<ZodNumber>;
+      generateAudio: ZodOptional<ZodBoolean>;
+      references: ZodOptional<
+        ZodArray<
+          ZodLazy<
+            ZodObject<
+              {
+                path: ZodString;
+                role: ZodEnum<{
+                  first: "first-frame";
+                  last: "last-frame";
+                  reference: "reference";
+                }>;
+              },
+              $strict
+            >
+          >
         >
-      >
-    >;
-  },
-  $strict
+      >;
+    },
+    $strict
+  >
 >;
 ```
 
@@ -862,56 +882,13 @@ validateMediaVideoSelection.
 ### mediaProviderWireSchema
 
 ```ts
-const mediaProviderWireSchema: ZodUnion<
-  readonly [
-    ZodUnion<
-      readonly [
-        ZodObject<
-          {
-            image: ZodString;
-          },
-          $strip
-        >,
-        ZodObject<
-          {
-            image: ZodArray<
-              ZodObject<
-                {
-                  base64: ZodOptional<ZodString>;
-                  data: ZodOptional<ZodString>;
-                  url: ZodOptional<ZodURL>;
-                },
-                $strict
-              >
-            >;
-          },
-          $strip
-        >,
-        ZodObject<
-          {
-            images: ZodArray<
-              ZodObject<
-                {
-                  base64: ZodOptional<ZodString>;
-                  data: ZodOptional<ZodString>;
-                  url: ZodOptional<ZodURL>;
-                },
-                $strict
-              >
-            >;
-          },
-          $strip
-        >,
-      ]
-    >,
-    ZodCustom<Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>>,
-    ZodCustom<Response, Response>,
-    ZodCustom<
-      ReadableStream<Uint8Array<ArrayBufferLike>>,
-      ReadableStream<Uint8Array<ArrayBufferLike>>
-    >,
-  ]
->;
+const mediaProviderWireSchema: ZodLazy<ZodUnion<readonly [ZodLazy<ZodUnion<readonly [ZodObject<{
+  image: ZodString;
+}, $strip>, ZodObject<{
+  image: ZodArray<ZodLazy<ZodObject<..., ...>>>;
+}, $strip>, ZodObject<{
+  images: ZodArray<ZodLazy<ZodObject<..., ...>>>;
+}, $strip>]>>, ZodCustom<Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>>, ZodCustom<Response, Response>, ZodCustom<ReadableStream<Uint8Array<ArrayBufferLike>>, ReadableStream<Uint8Array<ArrayBufferLike>>>]>>;
 ```
 
 Decode the Workers AI binding's raw output at the provider boundary.
@@ -952,31 +929,33 @@ value per model; never a price.
 ### mediaModelInputSchema
 
 ```ts
-const mediaModelInputSchema: ZodReadonly<
-  ZodObject<
-    {
-      transport: ZodEnum<{
-        json: "json";
-        multipart: "multipart";
-      }>;
-      dimensions: ZodEnum<{
-        none: "none";
-        own: "own";
-      }>;
-      maxDimension: ZodNullable<ZodNumber>;
-      defaultWidth: ZodNumber;
-      defaultHeight: ZodNumber;
-      steps: ZodEnum<{
-        steps: "steps";
-        num_steps: "num_steps";
-        fixed: "fixed";
-      }>;
-      maxSteps: ZodNullable<ZodNumber>;
-      defaultSteps: ZodNullable<ZodNumber>;
-      referenceField: ZodNullable<ZodString>;
-      maxReferences: ZodNumber;
-    },
-    $strict
+const mediaModelInputSchema: ZodLazy<
+  ZodReadonly<
+    ZodObject<
+      {
+        transport: ZodEnum<{
+          json: "json";
+          multipart: "multipart";
+        }>;
+        dimensions: ZodEnum<{
+          none: "none";
+          own: "own";
+        }>;
+        maxDimension: ZodNullable<ZodNumber>;
+        defaultWidth: ZodNumber;
+        defaultHeight: ZodNumber;
+        steps: ZodEnum<{
+          steps: "steps";
+          num_steps: "num_steps";
+          fixed: "fixed";
+        }>;
+        maxSteps: ZodNullable<ZodNumber>;
+        defaultSteps: ZodNullable<ZodNumber>;
+        referenceField: ZodNullable<ZodString>;
+        maxReferences: ZodNumber;
+      },
+      $strict
+    >
   >
 >;
 ```
@@ -994,6 +973,7 @@ const mediaVideoModelIdSchema: ZodEnum<{
   seedanceMini: "bytedance/seedance-2.0-mini";
   veo: "google/veo-3.1";
   veoFast: "google/veo-3.1-fast";
+  minimaxH3Max: "minimax/h3-max";
 }>;
 ```
 
@@ -1007,6 +987,7 @@ Verified Unified AI video identifiers; no inferred family aliases.
 const mediaVideoResolutionSchema: ZodEnum<{
   p480: "480p";
   p720: "720p";
+  p768: "768p";
   p1080: "1080p";
   p4k: "4k";
 }>;
@@ -1051,28 +1032,31 @@ Explicit reference meaning; frame mode and reference mode are exclusive.
 ### mediaVideoFormatSchema
 
 ```ts
-const mediaVideoFormatSchema: ZodReadonly<
-  ZodObject<
-    {
-      resolution: ZodEnum<{
-        p480: "480p";
-        p720: "720p";
-        p1080: "1080p";
-        p4k: "4k";
-      }>;
-      aspectRatio: ZodEnum<{
-        wide: "16:9";
-        landscape: "4:3";
-        square: "1:1";
-        portrait: "3:4";
-        tall: "9:16";
-        ultrawide: "21:9";
-        ultratall: "9:21";
-      }>;
-      width: ZodNumber;
-      height: ZodNumber;
-    },
-    $strict
+const mediaVideoFormatSchema: ZodLazy<
+  ZodReadonly<
+    ZodObject<
+      {
+        resolution: ZodEnum<{
+          p480: "480p";
+          p720: "720p";
+          p768: "768p";
+          p1080: "1080p";
+          p4k: "4k";
+        }>;
+        aspectRatio: ZodEnum<{
+          wide: "16:9";
+          landscape: "4:3";
+          square: "1:1";
+          portrait: "3:4";
+          tall: "9:16";
+          ultrawide: "21:9";
+          ultratall: "9:21";
+        }>;
+        width: ZodNumber;
+        height: ZodNumber;
+      },
+      $strict
+    >
   >
 >;
 ```
@@ -1084,105 +1068,65 @@ One nominal size used to select provider resolution and aspect.
 ### mediaVideoSchema
 
 ```ts
-const mediaVideoSchema: ZodReadonly<
-  ZodObject<
-    {
-      minSeconds: ZodNumber;
-      maxSeconds: ZodNumber;
-      defaultSeconds: ZodNumber;
-      durations: ZodReadonly<ZodArray<ZodNumber>>;
-      provider: ZodEnum<{
-        seedance: "seedance";
-        veo: "veo";
-      }>;
-      formats: ZodReadonly<
-        ZodArray<
-          ZodReadonly<
-            ZodObject<
-              {
-                resolution: ZodEnum<{
-                  p480: "480p";
-                  p720: "720p";
-                  p1080: "1080p";
-                  p4k: "4k";
-                }>;
-                aspectRatio: ZodEnum<{
-                  wide: "16:9";
-                  landscape: "4:3";
-                  square: "1:1";
-                  portrait: "3:4";
-                  tall: "9:16";
-                  ultrawide: "21:9";
-                  ultratall: "9:21";
-                }>;
-                width: ZodNumber;
-                height: ZodNumber;
-              },
-              $strict
-            >
-          >
-        >
-      >;
-      defaultResolution: ZodEnum<{
-        p480: "480p";
-        p720: "720p";
-        p1080: "1080p";
-        p4k: "4k";
-      }>;
-      defaultAspectRatio: ZodEnum<{
-        wide: "16:9";
-        landscape: "4:3";
-        square: "1:1";
-        portrait: "3:4";
-        tall: "9:16";
-        ultrawide: "21:9";
-        ultratall: "9:21";
-      }>;
-      defaultGenerateAudio: ZodNullable<ZodBoolean>;
-      maxPromptLength: ZodNumber;
-      referenceRoles: ZodReadonly<
-        ZodArray<
-          ZodEnum<{
-            first: "first-frame";
-            last: "last-frame";
-            reference: "reference";
-          }>
-        >
-      >;
-      maxReferenceImages: ZodNumber;
-      referenceResolutions: ZodReadonly<
-        ZodArray<
-          ZodEnum<{
-            p480: "480p";
-            p720: "720p";
-            p1080: "1080p";
-            p4k: "4k";
-          }>
-        >
-      >;
-      prices: ZodReadonly<
-        ZodArray<
-          ZodReadonly<
-            ZodObject<
-              {
-                resolution: ZodEnum<{
-                  p480: "480p";
-                  p720: "720p";
-                  p1080: "1080p";
-                  p4k: "4k";
-                }>;
-                silentMilliunitsPerSecond: ZodNumber;
-                audioMilliunitsPerSecond: ZodNumber;
-              },
-              $strict
-            >
-          >
-        >
-      >;
-    },
-    $strict
-  >
->;
+const mediaVideoSchema: ZodLazy<ZodReadonly<ZodObject<{
+  minSeconds: ZodNumber;
+  maxSeconds: ZodNumber;
+  defaultSeconds: ZodNumber;
+  durations: ZodReadonly<ZodArray<ZodNumber>>;
+  provider: ZodEnum<{
+     seedance: "seedance";
+     veo: "veo";
+     minimax: "minimax";
+  }>;
+  formats: ZodReadonly<ZodArray<ZodLazy<ZodReadonly<ZodObject<{
+     resolution: ZodEnum<...>;
+     aspectRatio: ZodEnum<...>;
+     width: ZodNumber;
+     height: ZodNumber;
+  }, $strict>>>>>;
+  defaultResolution: ZodEnum<{
+     p480: "480p";
+     p720: "720p";
+     p768: "768p";
+     p1080: "1080p";
+     p4k: "4k";
+  }>;
+  defaultAspectRatio: ZodEnum<{
+     wide: "16:9";
+     landscape: "4:3";
+     square: "1:1";
+     portrait: "3:4";
+     tall: "9:16";
+     ultrawide: "21:9";
+     ultratall: "9:21";
+  }>;
+  defaultGenerateAudio: ZodNullable<ZodBoolean>;
+  maxPromptLength: ZodNumber;
+  referenceRoles: ZodReadonly<ZodArray<ZodEnum<{
+     first: "first-frame";
+     last: "last-frame";
+     reference: "reference";
+  }>>>;
+  maxReferenceImages: ZodNumber;
+  referenceResolutions: ZodReadonly<ZodArray<ZodEnum<{
+     p480: "480p";
+     p720: "720p";
+     p768: "768p";
+     p1080: "1080p";
+     p4k: "4k";
+  }>>>;
+  prices: ZodReadonly<ZodArray<ZodReadonly<ZodObject<{
+     resolution: ZodEnum<{
+        p480: ...;
+        p720: ...;
+        p768: ...;
+        p1080: ...;
+        p4k: ...;
+     }>;
+     silentMilliunitsPerSecond: ZodNumber;
+     audioMilliunitsPerSecond: ZodNumber;
+  }, $strict>>>>;
+}, $strict>>>;
 ```
 
 Verified video parameters and provider costs, checked 2026-10-11.
@@ -1210,7 +1154,7 @@ const mediaModelSchema: ZodReadonly<ZodObject<{
      jpeg: "jpeg";
      webp: "webp";
   }>>>;
-  input: ZodReadonly<ZodObject<{
+  input: ZodLazy<ZodReadonly<ZodObject<{
      transport: ZodEnum<{
         json: "json";
         multipart: "multipart";
@@ -1231,9 +1175,9 @@ const mediaModelSchema: ZodReadonly<ZodObject<{
      defaultSteps: ZodNullable<ZodNumber>;
      referenceField: ZodNullable<ZodString>;
      maxReferences: ZodNumber;
-  }, $strict>>;
+  }, $strict>>>;
   sizes: ZodNullable<ZodReadonly<ZodArray<ZodString>>>;
-  video: ZodNullable<ZodReadonly<ZodObject<{
+  video: ZodNullable<ZodLazy<ZodReadonly<ZodObject<{
      minSeconds: ZodNumber;
      maxSeconds: ZodNumber;
      defaultSeconds: ZodNumber;
@@ -1241,11 +1185,13 @@ const mediaModelSchema: ZodReadonly<ZodObject<{
      provider: ZodEnum<{
         seedance: "seedance";
         veo: "veo";
+        minimax: "minimax";
      }>;
-     formats: ZodReadonly<ZodArray<ZodReadonly<ZodObject<..., ...>>>>;
+     formats: ZodReadonly<ZodArray<ZodLazy<...>>>;
      defaultResolution: ZodEnum<{
         p480: "480p";
         p720: "720p";
+        p768: "768p";
         p1080: "1080p";
         p4k: "4k";
      }>;
@@ -1260,20 +1206,11 @@ const mediaModelSchema: ZodReadonly<ZodObject<{
      }>;
      defaultGenerateAudio: ZodNullable<ZodBoolean>;
      maxPromptLength: ZodNumber;
-     referenceRoles: ZodReadonly<ZodArray<ZodEnum<{
-        first: ...;
-        last: ...;
-        reference: ...;
-     }>>>;
+     referenceRoles: ZodReadonly<ZodArray<ZodEnum<...>>>;
      maxReferenceImages: ZodNumber;
-     referenceResolutions: ZodReadonly<ZodArray<ZodEnum<{
-        p480: ...;
-        p720: ...;
-        p1080: ...;
-        p4k: ...;
-     }>>>;
-     prices: ZodReadonly<ZodArray<ZodReadonly<ZodObject<..., ...>>>>;
-  }, $strict>>>;
+     referenceResolutions: ZodReadonly<ZodArray<ZodEnum<...>>>;
+     prices: ZodReadonly<ZodArray<ZodReadonly<...>>>;
+  }, $strict>>>>;
 }, $strict>>;
 ```
 
@@ -1353,19 +1290,19 @@ Validate caller settings and apply retained model defaults.
 
 #### Parameters
 
-| Parameter              | Type                                                                                                                                                                                                                                                                                                                                                     | Description                                                                   |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `raw`                  | \{ `model`: `string`; `prompt`: `string`; `width`: `number`; `height`: `number`; `steps?`: `number`; `durationSeconds?`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; \} | -                                                                             |
-| `raw.model`            | `string`                                                                                                                                                                                                                                                                                                                                                 | Provider catalog model identifier.                                            |
-| `raw.prompt`           | `string`                                                                                                                                                                                                                                                                                                                                                 | Generation prompt.                                                            |
-| `raw.width`            | `number`                                                                                                                                                                                                                                                                                                                                                 | Requested image width or nominal video selector, not decoded MP4 dimensions.  |
-| `raw.height`           | `number`                                                                                                                                                                                                                                                                                                                                                 | Requested image height or nominal video selector, not decoded MP4 dimensions. |
-| `raw.steps?`           | `number`                                                                                                                                                                                                                                                                                                                                                 | Model-specific inference step count.                                          |
-| `raw.durationSeconds?` | `number`                                                                                                                                                                                                                                                                                                                                                 | Requested video length in whole seconds.                                      |
-| `raw.resolution?`      | `"480p"` \| `"720p"` \| `"1080p"` \| `"4k"`                                                                                                                                                                                                                                                                                                              | Video resolution; must match the nominal width/height selector.               |
-| `raw.aspectRatio?`     | `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`                                                                                                                                                                                                                                                                            | Video aspect; must match the nominal width/height selector.                   |
-| `raw.generateAudio?`   | `boolean`                                                                                                                                                                                                                                                                                                                                                | Video audio selection.                                                        |
-| `raw.references?`      | `object`[]                                                                                                                                                                                                                                                                                                                                               | Host-authorized reference images.                                             |
+| Parameter              | Type                                                                                                                                                                                                                                                                                                                                                                 | Description                                                                   |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `raw`                  | \{ `model`: `string`; `prompt`: `string`; `width`: `number`; `height`: `number`; `steps?`: `number`; `durationSeconds?`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; \} | -                                                                             |
+| `raw.model`            | `string`                                                                                                                                                                                                                                                                                                                                                             | Provider catalog model identifier.                                            |
+| `raw.prompt`           | `string`                                                                                                                                                                                                                                                                                                                                                             | Generation prompt.                                                            |
+| `raw.width`            | `number`                                                                                                                                                                                                                                                                                                                                                             | Requested image width or nominal video selector, not decoded MP4 dimensions.  |
+| `raw.height`           | `number`                                                                                                                                                                                                                                                                                                                                                             | Requested image height or nominal video selector, not decoded MP4 dimensions. |
+| `raw.steps?`           | `number`                                                                                                                                                                                                                                                                                                                                                             | Model-specific inference step count.                                          |
+| `raw.durationSeconds?` | `number`                                                                                                                                                                                                                                                                                                                                                             | Requested video length in whole seconds.                                      |
+| `raw.resolution?`      | `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`                                                                                                                                                                                                                                                                                                              | Video resolution; must match the nominal width/height selector.               |
+| `raw.aspectRatio?`     | `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`                                                                                                                                                                                                                                                                                        | Video aspect; must match the nominal width/height selector.                   |
+| `raw.generateAudio?`   | `boolean`                                                                                                                                                                                                                                                                                                                                                            | Video audio selection.                                                        |
+| `raw.references?`      | `object`[]                                                                                                                                                                                                                                                                                                                                                           | Host-authorized reference images.                                             |
 
 #### Returns
 
@@ -1385,19 +1322,19 @@ Validate path-only selections without inventing a Computer identity.
 
 #### Parameters
 
-| Parameter              | Type                                                                                                                                                                                                                                                                                                                                                     | Description                                                                   |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `raw`                  | \{ `model`: `string`; `prompt`: `string`; `width`: `number`; `height`: `number`; `steps?`: `number`; `durationSeconds?`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; \} | -                                                                             |
-| `raw.model`            | `string`                                                                                                                                                                                                                                                                                                                                                 | Provider catalog model identifier.                                            |
-| `raw.prompt`           | `string`                                                                                                                                                                                                                                                                                                                                                 | Generation prompt.                                                            |
-| `raw.width`            | `number`                                                                                                                                                                                                                                                                                                                                                 | Requested image width or nominal video selector, not decoded MP4 dimensions.  |
-| `raw.height`           | `number`                                                                                                                                                                                                                                                                                                                                                 | Requested image height or nominal video selector, not decoded MP4 dimensions. |
-| `raw.steps?`           | `number`                                                                                                                                                                                                                                                                                                                                                 | Model-specific inference step count.                                          |
-| `raw.durationSeconds?` | `number`                                                                                                                                                                                                                                                                                                                                                 | Requested video length in whole seconds.                                      |
-| `raw.resolution?`      | `"480p"` \| `"720p"` \| `"1080p"` \| `"4k"`                                                                                                                                                                                                                                                                                                              | Video resolution; must match the nominal width/height selector.               |
-| `raw.aspectRatio?`     | `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`                                                                                                                                                                                                                                                                            | Video aspect; must match the nominal width/height selector.                   |
-| `raw.generateAudio?`   | `boolean`                                                                                                                                                                                                                                                                                                                                                | Video audio selection.                                                        |
-| `raw.references?`      | `object`[]                                                                                                                                                                                                                                                                                                                                               | Host-authorized reference images.                                             |
+| Parameter              | Type                                                                                                                                                                                                                                                                                                                                                                 | Description                                                                   |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `raw`                  | \{ `model`: `string`; `prompt`: `string`; `width`: `number`; `height`: `number`; `steps?`: `number`; `durationSeconds?`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; \} | -                                                                             |
+| `raw.model`            | `string`                                                                                                                                                                                                                                                                                                                                                             | Provider catalog model identifier.                                            |
+| `raw.prompt`           | `string`                                                                                                                                                                                                                                                                                                                                                             | Generation prompt.                                                            |
+| `raw.width`            | `number`                                                                                                                                                                                                                                                                                                                                                             | Requested image width or nominal video selector, not decoded MP4 dimensions.  |
+| `raw.height`           | `number`                                                                                                                                                                                                                                                                                                                                                             | Requested image height or nominal video selector, not decoded MP4 dimensions. |
+| `raw.steps?`           | `number`                                                                                                                                                                                                                                                                                                                                                             | Model-specific inference step count.                                          |
+| `raw.durationSeconds?` | `number`                                                                                                                                                                                                                                                                                                                                                             | Requested video length in whole seconds.                                      |
+| `raw.resolution?`      | `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`                                                                                                                                                                                                                                                                                                              | Video resolution; must match the nominal width/height selector.               |
+| `raw.aspectRatio?`     | `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`                                                                                                                                                                                                                                                                                        | Video aspect; must match the nominal width/height selector.                   |
+| `raw.generateAudio?`   | `boolean`                                                                                                                                                                                                                                                                                                                                                            | Video audio selection.                                                        |
+| `raw.references?`      | `object`[]                                                                                                                                                                                                                                                                                                                                                           | Host-authorized reference images.                                             |
 
 #### Returns
 
@@ -1417,16 +1354,16 @@ or billing admission.
 
 #### Parameters
 
-| Parameter              | Type                                                                                                                                                                                                                                                                                                                                                                                                                                      | Description                                                                                |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `raw`                  | \{ `model`: \| `"bytedance/seedance-2.0"` \| `"bytedance/seedance-2.0-fast"` \| `"bytedance/seedance-2.0-mini"` \| `"google/veo-3.1"` \| `"google/veo-3.1-fast"`; `prompt`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `durationSeconds?`: `number`; `generateAudio?`: `boolean`; `references?`: `object`[]; \} | -                                                                                          |
-| `raw.model`            | \| `"bytedance/seedance-2.0"` \| `"bytedance/seedance-2.0-fast"` \| `"bytedance/seedance-2.0-mini"` \| `"google/veo-3.1"` \| `"google/veo-3.1-fast"`                                                                                                                                                                                                                                                                                      | Verified catalog model identifier.                                                         |
-| `raw.prompt`           | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                  | Trimmed prompt; Seedance allows 2,000 characters, Veo uses the retained host cap of 2,048. |
-| `raw.resolution?`      | `"480p"` \| `"720p"` \| `"1080p"` \| `"4k"`                                                                                                                                                                                                                                                                                                                                                                                               | Model-specific resolution, default 720p.                                                   |
-| `raw.aspectRatio?`     | `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`                                                                                                                                                                                                                                                                                                                                                             | Model-specific aspect, default 16:9.                                                       |
-| `raw.durationSeconds?` | `number`                                                                                                                                                                                                                                                                                                                                                                                                                                  | Whole seconds; Seedance 4–12, Veo exactly 4/6/8.                                           |
-| `raw.generateAudio?`   | `boolean`                                                                                                                                                                                                                                                                                                                                                                                                                                 | Veo defaults true; Seedance omits the provider option when unset.                          |
-| `raw.references?`      | `object`[]                                                                                                                                                                                                                                                                                                                                                                                                                                | Up to four references, with provider-specific roles and mode limits.                       |
+| Parameter              | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Description                                                                                                                         |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `raw`                  | \{ `model`: \| `"bytedance/seedance-2.0"` \| `"bytedance/seedance-2.0-fast"` \| `"bytedance/seedance-2.0-mini"` \| `"google/veo-3.1"` \| `"google/veo-3.1-fast"` \| `"minimax/h3-max"`; `prompt`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `durationSeconds?`: `number`; `generateAudio?`: `boolean`; `references?`: `object`[]; \} | -                                                                                                                                   |
+| `raw.model`            | \| `"bytedance/seedance-2.0"` \| `"bytedance/seedance-2.0-fast"` \| `"bytedance/seedance-2.0-mini"` \| `"google/veo-3.1"` \| `"google/veo-3.1-fast"` \| `"minimax/h3-max"`                                                                                                                                                                                                                                                                                                  | Verified catalog model identifier.                                                                                                  |
+| `raw.prompt`           | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Trimmed prompt; Seedance allows 2,000 characters, Veo uses the retained host cap of 2,048.                                          |
+| `raw.resolution?`      | `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`                                                                                                                                                                                                                                                                                                                                                                                                                     | Model-specific resolution, default 720p.                                                                                            |
+| `raw.aspectRatio?`     | `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`                                                                                                                                                                                                                                                                                                                                                                                               | Model-specific aspect, default 16:9.                                                                                                |
+| `raw.durationSeconds?` | `number`                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Whole seconds; Seedance 4–12, Veo exactly 4/6/8, MiniMax H3 Max 5–15.                                                               |
+| `raw.generateAudio?`   | `boolean`                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Veo defaults true; Seedance omits the provider option when unset; MiniMax H3 Max has no audio field and refuses an explicit choice. |
+| `raw.references?`      | `object`[]                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Up to four references, with provider-specific roles and mode limits.                                                                |
 
 #### Returns
 
@@ -1612,23 +1549,25 @@ function listMediaModels(): readonly Readonly<{
     maxSeconds: number;
     defaultSeconds: number;
     durations: readonly number[];
-    provider: "seedance" | "veo";
+    provider: "seedance" | "veo" | "minimax";
     formats: readonly Readonly<{
-      resolution: "480p" | "720p" | "1080p" | "4k";
+      resolution: "480p" | "720p" | "768p" | "1080p" | "4k";
       aspectRatio: "16:9" | "4:3" | "1:1" | "3:4" | "9:16" | "21:9" | "9:21";
       width: number;
       height: number;
     }>[];
-    defaultResolution: "480p" | "720p" | "1080p" | "4k";
+    defaultResolution: "480p" | "720p" | "768p" | "1080p" | "4k";
     defaultAspectRatio:
       "16:9" | "4:3" | "1:1" | "3:4" | "9:16" | "21:9" | "9:21";
     defaultGenerateAudio: boolean | null;
     maxPromptLength: number;
     referenceRoles: readonly ("first-frame" | "last-frame" | "reference")[];
     maxReferenceImages: number;
-    referenceResolutions: readonly ("480p" | "720p" | "1080p" | "4k")[];
+    referenceResolutions: readonly (
+      "480p" | "720p" | "768p" | "1080p" | "4k"
+    )[];
     prices: readonly Readonly<{
-      resolution: "480p" | "720p" | "1080p" | "4k";
+      resolution: "480p" | "720p" | "768p" | "1080p" | "4k";
       silentMilliunitsPerSecond: number;
       audioMilliunitsPerSecond: number;
     }>[];
@@ -1650,19 +1589,19 @@ readonly `Readonly`\<\{ `id`: `string`; `label`: `string`; `kind`: `"image"` \|
 `referenceField`: `string` \| `null`; `maxReferences`: `number`; \}\>; `sizes`:
 readonly `string`[] \| `null`; `video`: \| `Readonly`\<\{ `minSeconds`:
 `number`; `maxSeconds`: `number`; `defaultSeconds`: `number`; `durations`:
-readonly `number`[]; `provider`: `"seedance"` \| `"veo"`; `formats`: readonly
-`Readonly`\<\{ `resolution`: `"480p"` \| `"720p"` \| `"1080p"` \| `"4k"`;
-`aspectRatio`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"`
-\| `"9:21"`; `width`: `number`; `height`: `number`; \}\>[]; `defaultResolution`:
-`"480p"` \| `"720p"` \| `"1080p"` \| `"4k"`; `defaultAspectRatio`: `"16:9"` \|
-`"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`;
-`defaultGenerateAudio`: `boolean` \| `null`; `maxPromptLength`: `number`;
-`referenceRoles`: readonly (`"first-frame"` \| `"last-frame"` \|
-`"reference"`)[]; `maxReferenceImages`: `number`; `referenceResolutions`:
-readonly (`"480p"` \| `"720p"` \| `"1080p"` \| `"4k"`)[]; `prices`: readonly
-`Readonly`\<\{ `resolution`: `"480p"` \| `"720p"` \| `"1080p"` \| `"4k"`;
-`silentMilliunitsPerSecond`: `number`; `audioMilliunitsPerSecond`: `number`;
-\}\>[]; \}\> \| `null`; \}\>[]
+readonly `number`[]; `provider`: `"seedance"` \| `"veo"` \| `"minimax"`;
+`formats`: readonly `Readonly`\<\{ `resolution`: `"480p"` \| `"720p"` \|
+`"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio`: `"16:9"` \| `"4:3"` \| `"1:1"`
+\| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `width`: `number`; `height`:
+`number`; \}\>[]; `defaultResolution`: `"480p"` \| `"720p"` \| `"768p"` \|
+`"1080p"` \| `"4k"`; `defaultAspectRatio`: `"16:9"` \| `"4:3"` \| `"1:1"` \|
+`"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `defaultGenerateAudio`: `boolean`
+\| `null`; `maxPromptLength`: `number`; `referenceRoles`: readonly
+(`"first-frame"` \| `"last-frame"` \| `"reference"`)[]; `maxReferenceImages`:
+`number`; `referenceResolutions`: readonly (`"480p"` \| `"720p"` \| `"768p"` \|
+`"1080p"` \| `"4k"`)[]; `prices`: readonly `Readonly`\<\{ `resolution`: `"480p"`
+\| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `silentMilliunitsPerSecond`:
+`number`; `audioMilliunitsPerSecond`: `number`; \}\>[]; \}\> \| `null`; \}\>[]
 
 ---
 
@@ -1694,24 +1633,26 @@ function getMediaModel(id):
         maxSeconds: number;
         defaultSeconds: number;
         durations: readonly number[];
-        provider: "seedance" | "veo";
+        provider: "seedance" | "veo" | "minimax";
         formats: readonly Readonly<{
-          resolution: "480p" | "720p" | "1080p" | "4k";
+          resolution: "480p" | "720p" | "768p" | "1080p" | "4k";
           aspectRatio:
             "16:9" | "4:3" | "1:1" | "3:4" | "9:16" | "21:9" | "9:21";
           width: number;
           height: number;
         }>[];
-        defaultResolution: "480p" | "720p" | "1080p" | "4k";
+        defaultResolution: "480p" | "720p" | "768p" | "1080p" | "4k";
         defaultAspectRatio:
           "16:9" | "4:3" | "1:1" | "3:4" | "9:16" | "21:9" | "9:21";
         defaultGenerateAudio: boolean | null;
         maxPromptLength: number;
         referenceRoles: readonly ("first-frame" | "last-frame" | "reference")[];
         maxReferenceImages: number;
-        referenceResolutions: readonly ("480p" | "720p" | "1080p" | "4k")[];
+        referenceResolutions: readonly (
+          "480p" | "720p" | "768p" | "1080p" | "4k"
+        )[];
         prices: readonly Readonly<{
-          resolution: "480p" | "720p" | "1080p" | "4k";
+          resolution: "480p" | "720p" | "768p" | "1080p" | "4k";
           silentMilliunitsPerSecond: number;
           audioMilliunitsPerSecond: number;
         }>[];
@@ -1740,19 +1681,20 @@ Find a model by provider identifier, returning undefined when it is absent.
 `referenceField`: `string` \| `null`; `maxReferences`: `number`; \}\>; `sizes`:
 readonly `string`[] \| `null`; `video`: \| `Readonly`\<\{ `minSeconds`:
 `number`; `maxSeconds`: `number`; `defaultSeconds`: `number`; `durations`:
-readonly `number`[]; `provider`: `"seedance"` \| `"veo"`; `formats`: readonly
-`Readonly`\<\{ `resolution`: `"480p"` \| `"720p"` \| `"1080p"` \| `"4k"`;
-`aspectRatio`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"`
-\| `"9:21"`; `width`: `number`; `height`: `number`; \}\>[]; `defaultResolution`:
-`"480p"` \| `"720p"` \| `"1080p"` \| `"4k"`; `defaultAspectRatio`: `"16:9"` \|
-`"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`;
-`defaultGenerateAudio`: `boolean` \| `null`; `maxPromptLength`: `number`;
-`referenceRoles`: readonly (`"first-frame"` \| `"last-frame"` \|
-`"reference"`)[]; `maxReferenceImages`: `number`; `referenceResolutions`:
-readonly (`"480p"` \| `"720p"` \| `"1080p"` \| `"4k"`)[]; `prices`: readonly
-`Readonly`\<\{ `resolution`: `"480p"` \| `"720p"` \| `"1080p"` \| `"4k"`;
-`silentMilliunitsPerSecond`: `number`; `audioMilliunitsPerSecond`: `number`;
-\}\>[]; \}\> \| `null`; \}\> \| `undefined`
+readonly `number`[]; `provider`: `"seedance"` \| `"veo"` \| `"minimax"`;
+`formats`: readonly `Readonly`\<\{ `resolution`: `"480p"` \| `"720p"` \|
+`"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio`: `"16:9"` \| `"4:3"` \| `"1:1"`
+\| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `width`: `number`; `height`:
+`number`; \}\>[]; `defaultResolution`: `"480p"` \| `"720p"` \| `"768p"` \|
+`"1080p"` \| `"4k"`; `defaultAspectRatio`: `"16:9"` \| `"4:3"` \| `"1:1"` \|
+`"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `defaultGenerateAudio`: `boolean`
+\| `null`; `maxPromptLength`: `number`; `referenceRoles`: readonly
+(`"first-frame"` \| `"last-frame"` \| `"reference"`)[]; `maxReferenceImages`:
+`number`; `referenceResolutions`: readonly (`"480p"` \| `"720p"` \| `"768p"` \|
+`"1080p"` \| `"4k"`)[]; `prices`: readonly `Readonly`\<\{ `resolution`: `"480p"`
+\| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `silentMilliunitsPerSecond`:
+`number`; `audioMilliunitsPerSecond`: `number`; \}\>[]; \}\> \| `null`; \}\> \|
+`undefined`
 
 ---
 

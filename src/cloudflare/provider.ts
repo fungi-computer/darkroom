@@ -16,6 +16,10 @@ import {
   MediaSafetyFilterRefusal,
 } from "../execution-error.js";
 import {
+  decodeMediaProviderErrorCategory,
+  type MediaProviderDiagnostic,
+} from "@fungi.computer/agar/errors";
+import {
   estimateGatewayMilliunits,
   gatewayInput,
   isGatewayModel,
@@ -75,19 +79,6 @@ const providerFailureCode = z.lazy(() =>
     .catch(null),
 );
 
-const providerFailureCategory = z.lazy(() =>
-  z
-    .enum([
-      "InferenceUpstreamError",
-      "AiInternalError",
-      "TypeError",
-      "AbortError",
-      "TimeoutError",
-      "Error",
-    ])
-    .catch("Error"),
-);
-
 // Recognize the refusal, not the generic Workers AI error number or prompt text.
 const safetyFilterMessage = z.lazy(() =>
   z.union([
@@ -114,25 +105,29 @@ function workersAiInput(payload: ReturnType<typeof buildProviderInput>) {
 
 /** Retain the original provider failure alongside its bounded code and category. */
 function providerFailure(model: string, cause: unknown): MediaExecutionError {
+  const provider: MediaProviderDiagnostic = {
+    category: decodeMediaProviderErrorCategory(
+      cause instanceof Error ? cause.name : undefined,
+    ),
+    code: providerFailureCode.parse(
+      cause instanceof Error ? cause.message : undefined,
+    ),
+  };
   // Workers correlates this structured event with the request trace. Never log
   // the provider message/body: either can contain customer prompt content.
   console.error(
     "Media provider request failed",
     {
       model,
-      providerCode: providerFailureCode.parse(
-        cause instanceof Error ? cause.message : undefined,
-      ),
-      category: providerFailureCategory.parse(
-        cause instanceof Error ? cause.name : undefined,
-      ),
+      providerCode: provider.code,
+      category: provider.category,
     },
     Redacted.make(cause),
   );
   return cause instanceof Error &&
     safetyFilterMessage.safeParse(cause.message).success
-    ? new MediaSafetyFilterRefusal({ cause })
-    : new MediaExecutionError("provider", { cause });
+    ? new MediaSafetyFilterRefusal({ cause, provider })
+    : new MediaExecutionError("provider", { cause, provider });
 }
 
 /** Run a gateway model and fetch its result URL within the byte bound. */
@@ -167,7 +162,10 @@ async function generateThroughGateway(
           providerValue,
         );
       const response = await fetchResult(url, { signal: signal ?? null });
-      if (!response.ok) throw new Error("gateway video result unavailable");
+      if (!response.ok)
+        throw new MediaExecutionError("normalization", {
+          provider: { category: "result_download", status: response.status },
+        });
       const bytes = await readResponseBytes(response, GATEWAY_VIDEO_MAX_BYTES);
       if (!isMp4(bytes)) throw new Error("gateway video is not an MP4");
       return { bytes, format: "mp4" };
@@ -180,6 +178,7 @@ async function generateThroughGateway(
       { fetchUrl: (url) => fetchResult(url, { signal: signal ?? null }) },
     );
   } catch (cause) {
+    if (cause instanceof MediaExecutionError) throw cause;
     throw new MediaExecutionError("normalization", { cause });
   }
 }

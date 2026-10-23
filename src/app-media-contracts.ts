@@ -90,6 +90,8 @@ export const appMediaBrokerFailureSchema = z.strictObject({
   stage: mediaFailureSchema.shape.stage,
   /** Original retry truth. */
   retryable: mediaFailureSchema.shape.retryable,
+  /** Original bounded provider facts, when available. */
+  provider: mediaFailureSchema.shape.provider,
 });
 
 /** Refusal payloads emitted by the App media broker, separate from transport errors. */
