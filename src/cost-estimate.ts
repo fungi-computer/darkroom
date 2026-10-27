@@ -1,4 +1,8 @@
-import { getMediaModel, MediaSettingsError } from "./model-catalog.js";
+import {
+  getMediaModel,
+  MAX_REFERENCE_COUNT,
+  MediaSettingsError,
+} from "./model-catalog.js";
 import { neuronsToMilliunits } from "./neurons.js";
 import * as z from "zod";
 
@@ -24,7 +28,6 @@ export type ImageReference = {
 
 const TILE = 512;
 const MAX_DIMENSION = 4_096;
-const MAX_REFERENCES = 4;
 
 const imageParamsSchema = z.lazy(() =>
   z
@@ -41,7 +44,7 @@ const imageParamsSchema = z.lazy(() =>
             })
             .strict(),
         )
-        .max(MAX_REFERENCES)
+        .max(MAX_REFERENCE_COUNT)
         .optional(),
     })
     .strict(),
@@ -64,7 +67,9 @@ const checked = (modelId: string, params: ImageParams): ImageParams => {
   if (model === undefined)
     throw new MediaSettingsError(`Image cost unknown for model "${modelId}"`);
   if (references.length > model.input.maxReferences)
-    return invalid(`${modelId} does not accept references`);
+    return invalid(
+      `${modelId} accepts at most ${String(model.input.maxReferences)} references`,
+    );
   const normalized = {
     width: candidate.width,
     height: candidate.height,

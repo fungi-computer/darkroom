@@ -61,7 +61,7 @@ export function estimate(
   if (settings.steps !== undefined) params.steps = settings.steps;
   try {
     if (isGatewayModel(settings.model))
-      return estimateGatewayMilliunits(settings);
+      return estimateGatewayMilliunits(settings, references);
     return estimateImageMilliunits(settings.model, params);
   } catch (cause) {
     throw new MediaExecutionError("estimate", { cause });
@@ -101,6 +101,34 @@ function workersAiInput(payload: ReturnType<typeof buildProviderInput>) {
       contentType: encoded.headers.get("Content-Type"),
     },
   };
+}
+
+/**
+ * The one AI Gateway routing rule: a call keeps the host's gateway option only
+ * when its input is gateway-compatible.
+ * - A stream input never is. The binding's documented multipart input is a
+ *   ReadableStream body
+ *   (https://developers.cloudflare.com/changelog/2025-11-25-flux-2-dev-workers-ai/),
+ *   and the gateway route rejects it: "AI Gateway does not support
+ *   ReadableStreams yet".
+ * - An image or frame input never is. AI Gateway documents no request body
+ *   limit (https://developers.cloudflare.com/ai-gateway/reference/limits/), yet
+ *   it rejects a first-frame Seedance request (~700 KB data URI) with
+ *   `7003: User Input Error` that succeeds on the direct binding.
+ * Metering stays correct either way: Media meters from its own estimate, not
+ * from gateway logs.
+ */
+function routedOptions(
+  options: AiOptions | undefined,
+  signal: AbortSignal | undefined,
+  input: Readonly<{ stream: boolean; images: number }>,
+): AiOptions | undefined {
+  const compatible = !input.stream && input.images === 0;
+  if (compatible || options === undefined)
+    return signal === undefined ? options : { ...options, signal };
+  const { gateway, ...direct } = options;
+  void gateway;
+  return signal === undefined ? direct : { ...direct, signal };
 }
 
 /** Retain the original provider failure alongside its bounded code and category. */
@@ -146,7 +174,10 @@ async function generateThroughGateway(
     providerValue = await ai.run(
       settings.model,
       input,
-      signal === undefined ? options : { ...options, signal },
+      routedOptions(options, signal, {
+        stream: false,
+        images: references.length,
+      }),
     );
   } catch (cause) {
     throw providerFailure(settings.model, cause);
@@ -213,7 +244,10 @@ export async function generate(
     providerValue = await ai.run(
       settings.model,
       workersAiInput(providerInput),
-      signal === undefined ? options : { ...options, signal },
+      routedOptions(options, signal, {
+        stream: providerInput.transport === "multipart",
+        images: references.length,
+      }),
     );
   } catch (cause) {
     throw providerFailure(settings.model, cause);

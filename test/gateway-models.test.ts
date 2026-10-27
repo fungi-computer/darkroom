@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import * as z from "zod";
-import { validateMediaGenerationSettings } from "../src/index.js";
+import {
+  getMediaModel,
+  listMediaModels,
+  validateMediaGenerationSettings,
+} from "../src/index.js";
 import {
   estimateGatewayMilliunits,
   gatewayInput,
@@ -75,12 +79,12 @@ describe("gateway Media models", () => {
 
   it("quotes published gateway rates in milliunits", () => {
     // 1,584 output tokens at $30/M + 22 prompt characters bounded at $5/M.
-    expect(estimateGatewayMilliunits(image())).toBe(
+    expect(estimateGatewayMilliunits(image(), [])).toBe(
       Math.ceil((1584 * 30 + 22 * 5) / 10),
     );
     // Seedance 2.0 at 720p is $0.15/s; 480p is $0.07/s.
-    expect(estimateGatewayMilliunits(video(5))).toBe(75_000);
-    expect(estimateGatewayMilliunits(video(4, "854x480"))).toBe(28_000);
+    expect(estimateGatewayMilliunits(video(5), [])).toBe(75_000);
+    expect(estimateGatewayMilliunits(video(4, "854x480"), [])).toBe(28_000);
   });
 
   it("passes each pinned image format to the gateway provider", () => {
@@ -279,5 +283,165 @@ describe("gateway Media models", () => {
         Promise.resolve(new Response(png)),
       ),
     ).rejects.toMatchObject({ stage: "normalization" });
+  });
+
+  describe("reference images", () => {
+    const withReferences = (count: number) =>
+      validateMediaGenerationSettings({
+        model: "openai/gpt-image-2",
+        prompt: "the same heroine at a bus stop",
+        width: 1024,
+        height: 1024,
+        references: Array.from({ length: count }, (_, index) => ({
+          computerId: "pictures",
+          path: `/refs/hero-${String(index)}.png`,
+        })),
+      });
+    const bytes = (count: number) =>
+      Array.from({ length: count }, () => ({
+        bytes: png,
+        format: "png" as const,
+        width: 1,
+        height: 1,
+      }));
+    const dataUri = `data:image/png;base64,${btoa(String.fromCharCode(...png))}`;
+
+    it("keeps image sizes and dimension ceilings to what Cloudflare documents", () => {
+      // https://developers.cloudflare.com/ai/models/openai/gpt-image-2/ lists size
+      // enum 1024x1024, 1024x1536, 1536x1024 (and auto); no 16:9 or 21:9 size.
+      expect(getMediaModel("openai/gpt-image-2")?.sizes).toEqual([
+        "1024x1024",
+        "1024x1536",
+        "1536x1024",
+      ]);
+      // https://developers.cloudflare.com/workers-ai/models/lucid-origin/ width/height maximum 2500.
+      expect(
+        getMediaModel("@cf/leonardo/lucid-origin")?.input.maxDimension,
+      ).toBe(2500);
+      // https://developers.cloudflare.com/workers-ai/models/phoenix-1.0/ width/height range 0 to 2048.
+      expect(
+        getMediaModel("@cf/leonardo/phoenix-1.0")?.input.maxDimension,
+      ).toBe(2048);
+    });
+
+    it("declares each model's own reference limit from its provider docs", () => {
+      expect(getMediaModel("openai/gpt-image-2")?.input).toMatchObject({
+        maxReferences: 16,
+        referenceField: "images",
+      });
+      expect(
+        getMediaModel("@cf/black-forest-labs/flux-1-schnell")?.input
+          .maxReferences,
+      ).toBe(0);
+      expect(
+        getMediaModel("@cf/black-forest-labs/flux-2-klein-4b")?.input
+          .maxReferences,
+      ).toBe(4);
+      for (const model of listMediaModels())
+        expect(model.input.maxReferences > 0).toBe(
+          model.input.referenceField !== null,
+        );
+    });
+
+    it("builds GPT Image 2's documented images[] data-URI body for N references", () => {
+      const input = gatewayInput(withReferences(3), bytes(3));
+      expect(input).toEqual({
+        prompt: "the same heroine at a bus stop",
+        size: "1024x1024",
+        quality: "medium",
+        output_format: "png",
+        images: [dataUri, dataUri, dataUri],
+      });
+    });
+
+    it("sends sixteen references and refuses a seventeenth, never truncating", () => {
+      const sixteen = gatewayInput(withReferences(16), bytes(16));
+      expect(
+        z.object({ images: z.array(z.string()) }).parse(sixteen).images,
+      ).toHaveLength(16);
+      expect(() => withReferences(17)).toThrow("settings are invalid");
+      expect(() =>
+        validateMediaGenerationSettings({
+          model: "@cf/black-forest-labs/flux-2-klein-4b",
+          prompt: "x",
+          width: 512,
+          height: 512,
+          references: Array.from({ length: 5 }, (_, index) => ({
+            computerId: "pictures",
+            path: `/refs/${String(index)}.png`,
+          })),
+        }),
+      ).toThrow("accepts at most 4 reference images");
+    });
+
+    it("refuses references the model does not take and mismatched bytes", () => {
+      expect(() =>
+        validateMediaGenerationSettings({
+          model: "@cf/black-forest-labs/flux-1-schnell",
+          prompt: "x",
+          width: 512,
+          height: 512,
+          references: [{ computerId: "pictures", path: "/a.png" }],
+        }),
+      ).toThrow("accepts at most 0 reference images");
+      expect(() => gatewayInput(withReferences(2), bytes(1))).toThrow(
+        "must match every admitted reference",
+      );
+      expect(() =>
+        gatewayInput(withReferences(1), [
+          { bytes: png, format: "gif", width: 1, height: 1 },
+        ]),
+      ).toThrow("not gif");
+    });
+
+    // Image inputs bypass the AI Gateway route (see routedOptions in cloudflare/provider.ts).
+    it("dispatches the references on the direct binding with a fake transport", async () => {
+      const settings = withReferences(2);
+      const run = vi.fn(() =>
+        Promise.resolve({
+          state: "Completed",
+          result: { image: "https://results.example/image" },
+        }),
+      );
+      await generate(
+        { run },
+        settings,
+        bytes(2),
+        undefined,
+        { gateway: { id: "fungi-hub" } },
+        () => Promise.resolve(new Response(png)),
+      );
+      expect(run).toHaveBeenCalledWith(
+        "openai/gpt-image-2",
+        expect.objectContaining({ images: [dataUri, dataUri] }),
+        {},
+      );
+    });
+
+    it("bills each reference at the image input rate with OpenAI's high-fidelity bound", () => {
+      const base = estimateGatewayMilliunits(withReferences(0), []);
+      // 512 square: 65 + 129 + 4,160 image tokens at $8/M, + 1 text token at $5/M.
+      expect(
+        estimateGatewayMilliunits(withReferences(1), [
+          { width: 512, height: 512 },
+        ]),
+      ).toBe(Math.ceil((1056 * 30 + 30 * 5 + 1 * 5 + 4354 * 8) / 10));
+      // 512 x 384: one tile, non-square adds 6,240.
+      expect(
+        estimateGatewayMilliunits(withReferences(1), [
+          { width: 512, height: 384 },
+        ]),
+      ).toBe(Math.ceil((1056 * 30 + 30 * 5 + 1 * 5 + 6434 * 8) / 10));
+      // 2048 x 1024 scales to 1024 x 512: two tiles.
+      expect(
+        estimateGatewayMilliunits(withReferences(1), [
+          { width: 2048, height: 1024 },
+        ]),
+      ).toBe(Math.ceil((1056 * 30 + 30 * 5 + 1 * 5 + 6563 * 8) / 10));
+      expect(base).toBe(Math.ceil((1056 * 30 + 30 * 5) / 10));
+      expect(() => estimateGatewayMilliunits(withReferences(2), [])).toThrow(
+        "must match every admitted reference",
+      );
+    });
   });
 });

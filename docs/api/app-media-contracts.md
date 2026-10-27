@@ -31,6 +31,7 @@ const mediaModelsSchema: ZodLazy<ZodArray<ZodReadonly<ZodObject<{
      jpeg: "jpeg";
      webp: "webp";
   }>>>;
+  maxPromptLength: ZodNumber;
   input: ZodLazy<ZodReadonly<ZodObject<{
      transport: ZodEnum<{
         json: ...;
@@ -64,7 +65,6 @@ const mediaModelsSchema: ZodLazy<ZodArray<ZodReadonly<ZodObject<{
      defaultResolution: ZodEnum<...>;
      defaultAspectRatio: ZodEnum<...>;
      defaultGenerateAudio: ZodNullable<...>;
-     maxPromptLength: ZodNumber;
      referenceRoles: ZodReadonly<...>;
      maxReferenceImages: ZodNumber;
      referenceResolutions: ZodReadonly<...>;
@@ -367,6 +367,7 @@ const appMediaModelsOutcomeSchema: ZodUnion<readonly [ZodLazy<ZodArray<ZodReadon
      jpeg: ...;
      webp: ...;
   }>>>;
+  maxPromptLength: ZodNumber;
   input: ZodLazy<ZodReadonly<ZodObject<{
      transport: ...;
      dimensions: ...;

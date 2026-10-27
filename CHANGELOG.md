@@ -1,5 +1,26 @@
 # @fungi.computer/darkroom
 
+## 0.3.0
+
+### Minor Changes
+
+- Changes since 0.2.1:
+
+  - fix(darkroom): route only gateway-compatible media inputs through AI Gateway
+  - fix(prints): seat the video controls in the composer row
+  - feat(prints): choose video frame roles and audio from the model's documented
+    capabilities
+  - feat(prints): widescreen presets within a documented maximum
+  - feat(prints): show the aspect ratio beside each image size
+  - fix(darkroom): bill GPT Image 2 references at the image input rate
+  - feat(prints): reference images per model, GPT Image 2 takes up to 16
+  - feat(prints): enforce a documented prompt limit per model
+
+### Patch Changes
+
+- Updated dependencies
+  - @fungi.computer/agar@0.4.0
+
 ## 0.2.1
 
 ### Patch Changes

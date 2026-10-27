@@ -79,7 +79,7 @@ describe("verified video catalog contract", () => {
       aspect_ratio: "16:9",
       generate_audio: true,
     });
-    expect(estimateGatewayMilliunits(settings)).toBe(60_000);
+    expect(estimateGatewayMilliunits(settings, [])).toBe(60_000);
     expect(mediaUnits(settings)).toEqual({ unit: "video_second", units: 6 });
     expect(getMediaModel(settings.model)?.video?.defaultSeconds).toBe(6);
   });
@@ -184,7 +184,7 @@ describe("video refinements and provider prices", () => {
           select(model, { resolution, generateAudio, durationSeconds: 4 }),
         ),
       ).toBe(perSecond * 4);
-      expect(estimateGatewayMilliunits(settings)).toBe(perSecond * 4);
+      expect(estimateGatewayMilliunits(settings, [])).toBe(perSecond * 4);
       expect(mediaUnits(settings)).toEqual({ unit: "video_second", units: 4 });
     },
   );
@@ -204,7 +204,7 @@ describe("video refinements and provider prices", () => {
         }),
       );
       expect(estimateVideoMilliunits(settings)).toBe(perSecond * 5);
-      expect(estimateGatewayMilliunits(settings)).toBe(perSecond * 5);
+      expect(estimateGatewayMilliunits(settings, [])).toBe(perSecond * 5);
       expect(mediaUnits(settings)).toEqual({ unit: "video_second", units: 5 });
     },
   );

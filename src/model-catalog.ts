@@ -32,7 +32,11 @@ export type MediaModelTier = z.output<typeof mediaModelTierSchema>;
 export const mediaModelInputSchema = z.lazy(() =>
   z
     .strictObject({
-      /** Provider input transport. */
+      /**
+       * Provider input transport. Multipart is the binding's documented
+       * ReadableStream body, which AI Gateway cannot carry, so multipart models
+       * run without the gateway option (see cloudflare/provider.ts).
+       */
       transport: z.enum({
         /** JSON provider input. */
         json: "json",
@@ -48,6 +52,8 @@ export const mediaModelInputSchema = z.lazy(() =>
       }),
       /** Maximum accepted dimension in pixels, or null when unbounded by this model. */
       maxDimension: z.number().int().positive().nullable(),
+      /** Whether the provider's own page documents `maxDimension`; false for host caps. */
+      maxDimensionDocumented: z.boolean(),
       /** Default output width in pixels. */
       defaultWidth: z.number().int().positive(),
       /** Default output height in pixels. */
@@ -72,6 +78,12 @@ export const mediaModelInputSchema = z.lazy(() =>
     })
     .readonly(),
 );
+
+/**
+ * Schema ceiling for reference lists: the largest per-model limit. Each model's
+ * own `maxReferences` / `maxReferenceImages` is enforced after parsing.
+ */
+export const MAX_REFERENCE_COUNT = 16;
 
 /** Verified Unified AI video identifiers; no inferred family aliases. */
 export const mediaVideoModelIdSchema = z.enum({
@@ -130,7 +142,7 @@ export type MediaVideoAspectRatio = z.output<
 export const mediaVideoReferenceRoleSchema = z.enum({
   /** First frame; required when a last frame is supplied. */
   first: "first-frame",
-  /** Last frame, supported by Seedance only. */
+  /** Last frame, supported by Seedance only (`last_frame_image`). */
   last: "last-frame",
   /** One image in Seedance reference-image mode. */
   reference: "reference",
@@ -185,10 +197,10 @@ export const mediaVideoSchema = z.lazy(() =>
       defaultResolution: mediaVideoResolutionSchema,
       /** Aspect selected when omitted. */
       defaultAspectRatio: mediaVideoAspectRatioSchema,
+      /** Whether the model documents a `generate_audio` choice. */
+      supportsAudio: z.boolean(),
       /** Audio default, or null when not documented and left to the provider. */
       defaultGenerateAudio: z.boolean().nullable(),
-      /** Prompt bound: provider bound for Seedance, retained host bound for Veo. */
-      maxPromptLength: z.number().int().positive(),
       /** Frame or reference roles this provider accepts. */
       referenceRoles: z.array(mediaVideoReferenceRoleSchema).readonly(),
       /** Reference-image mode count; first/last frame mode has its own grammar. */
@@ -216,6 +228,14 @@ export const mediaVideoSchema = z.lazy(() =>
 /** Immutable video capability and price metadata. */
 export type MediaVideoModel = z.output<typeof mediaVideoSchema>;
 
+/**
+ * Structural ceiling for any prompt on the wire. Each model's own
+ * `maxPromptLength` is the real bound; no model may exceed this ceiling.
+ */
+export const MAX_MEDIA_PROMPT_LENGTH = 32_000;
+/** Prompt cap kept for models whose provider documents no prompt limit. */
+const UNDOCUMENTED_PROMPT_LENGTH = 2_048;
+
 /** Public wire grammar for a catalog entry returned by the Media owner. */
 export const mediaModelSchema = z
   .strictObject({
@@ -234,6 +254,11 @@ export const mediaModelSchema = z
     tier: mediaModelTierSchema,
     /** Verified provider encodings; an empty list refuses pinned formats. */
     outputFormats: z.array(mediaRequestedImageFormatSchema).max(3).readonly(),
+    /**
+     * Maximum prompt length in characters for this model: the provider's
+     * documented limit, or the retained 2,048 host cap where none is documented.
+     */
+    maxPromptLength: z.number().int().positive().max(MAX_MEDIA_PROMPT_LENGTH),
     /** Model-native input options and reference limits. */
     input: mediaModelInputSchema,
     /**
@@ -328,8 +353,12 @@ function videoModel(
     formats,
     defaultResolution: "720p",
     defaultAspectRatio: "16:9",
+    // Seedance documents `generate_audio` without a default; Veo documents
+    // `generate_audio` with default true.
+    // https://developers.cloudflare.com/ai/models/bytedance/seedance-2.0/
+    // https://developers.cloudflare.com/ai/models/google/veo-3.1/
+    supportsAudio: true,
     defaultGenerateAudio: seedance ? null : true,
-    maxPromptLength: seedance ? 2000 : 2048,
     referenceRoles: Object.freeze(
       seedance
         ? mediaVideoReferenceRoleSchema.options
@@ -358,6 +387,10 @@ function videoModel(
     id,
     label,
     tier,
+    // Seedance: the provider's own 2,000-character bound (retained from the
+    // earlier video contract).
+    // Veo documents no character limit; keep the retained 2,048 host cap.
+    maxPromptLength: seedance ? 2_000 : UNDOCUMENTED_PROMPT_LENGTH,
     kind: "video",
     video,
     sizes: Object.freeze(
@@ -369,6 +402,7 @@ function videoModel(
       maxDimension: Math.max(
         ...formats.map(({ width, height }) => Math.max(width, height)),
       ),
+      maxDimensionDocumented: false,
       defaultWidth: 1280,
       defaultHeight: 720,
       steps: "fixed",
@@ -438,10 +472,15 @@ function minimaxVideoModel(): MediaModel {
     // Not merely undocumented: the schema has no audio field at all, so the
     // dispatcher refuses an explicit generateAudio choice outright.
     defaultGenerateAudio: null,
-    maxPromptLength: 7000,
-    referenceRoles: Object.freeze(mediaVideoReferenceRoleSchema.options),
-    // The host-wide MAX_REFERENCE_COUNT (4) already governs every call; the
-    // vendor page documents up to nine, which this catalog cannot reach.
+    supportsAudio: false,
+    // The vendor page documents `first_frame` and `reference_image` roles only;
+    // it names no last frame.
+    referenceRoles: Object.freeze([
+      mediaVideoReferenceRoleSchema.enum.first,
+      mediaVideoReferenceRoleSchema.enum.reference,
+    ]),
+    // The vendor page documents up to nine; this stays at the conservative
+    // verified value of four until the gateway schema is confirmed.
     maxReferenceImages: 4,
     referenceResolutions: Object.freeze(resolutions),
     prices: Object.freeze([
@@ -462,6 +501,8 @@ function minimaxVideoModel(): MediaModel {
     id: mediaVideoModelIdSchema.enum.minimaxH3Max,
     label: "MiniMax H3 Max",
     tier: "balanced",
+    // 7,000 characters per the vendor page cited above.
+    maxPromptLength: 7_000,
     kind: "video",
     video,
     sizes: Object.freeze(
@@ -473,6 +514,7 @@ function minimaxVideoModel(): MediaModel {
       maxDimension: Math.max(
         ...formats.map(({ width, height }) => Math.max(width, height)),
       ),
+      maxDimensionDocumented: false,
       defaultWidth: defaultFormat.width,
       defaultHeight: defaultFormat.height,
       steps: "fixed",
@@ -489,6 +531,8 @@ function minimaxVideoModel(): MediaModel {
 const models: readonly MediaModel[] = Object.freeze([
   freezeModel({
     id: "@cf/black-forest-labs/flux-1-schnell",
+    // 2,048 characters: input schema maxLength at developers.cloudflare.com/workers-ai/models/flux-1-schnell/.
+    maxPromptLength: 2_048,
     outputFormats: Object.freeze(["jpeg"]),
     tier: "draft",
     label: "Flux 1 Schnell — cheap/fast sketches",
@@ -496,6 +540,7 @@ const models: readonly MediaModel[] = Object.freeze([
       transport: "json",
       dimensions: "none",
       maxDimension: null,
+      maxDimensionDocumented: false,
       defaultWidth: 1024,
       defaultHeight: 768,
       steps: "steps",
@@ -507,12 +552,15 @@ const models: readonly MediaModel[] = Object.freeze([
   }),
   freezeModel({
     id: "@cf/black-forest-labs/flux-2-klein-4b",
+    // Workers AI documents no prompt maxLength for this model; keep the 2,048 host cap.
+    maxPromptLength: UNDOCUMENTED_PROMPT_LENGTH,
     tier: "balanced",
     label: "Flux 2 Klein 4b — balanced default",
     input: {
       transport: "multipart",
       dimensions: "own",
       maxDimension: 1920,
+      maxDimensionDocumented: false,
       defaultWidth: 1024,
       defaultHeight: 768,
       steps: "fixed",
@@ -524,12 +572,15 @@ const models: readonly MediaModel[] = Object.freeze([
   }),
   freezeModel({
     id: "@cf/black-forest-labs/flux-2-klein-9b",
+    // Workers AI documents no prompt maxLength for this model; keep the 2,048 host cap.
+    maxPromptLength: UNDOCUMENTED_PROMPT_LENGTH,
     tier: "premium",
     label: "Flux 2 Klein 9b — higher quality flux-2",
     input: {
       transport: "multipart",
       dimensions: "own",
       maxDimension: 1920,
+      maxDimensionDocumented: false,
       defaultWidth: 1024,
       defaultHeight: 768,
       steps: "fixed",
@@ -541,12 +592,15 @@ const models: readonly MediaModel[] = Object.freeze([
   }),
   freezeModel({
     id: "@cf/black-forest-labs/flux-2-dev",
+    // Workers AI documents no prompt maxLength for this model; keep the 2,048 host cap.
+    maxPromptLength: UNDOCUMENTED_PROMPT_LENGTH,
     tier: "max",
     label: "Flux 2 Dev — best detailed quality, expensive",
     input: {
       transport: "multipart",
       dimensions: "own",
       maxDimension: 1920,
+      maxDimensionDocumented: false,
       defaultWidth: 1024,
       defaultHeight: 768,
       steps: "steps",
@@ -558,12 +612,16 @@ const models: readonly MediaModel[] = Object.freeze([
   }),
   freezeModel({
     id: "@cf/leonardo/lucid-origin",
+    // Workers AI documents no prompt maxLength for this model; keep the 2,048 host cap.
+    maxPromptLength: UNDOCUMENTED_PROMPT_LENGTH,
     tier: "premium",
     label: "Leonardo Lucid Origin — premium prompt adherence",
     input: {
       transport: "json",
       dimensions: "own",
+      // https://developers.cloudflare.com/workers-ai/models/lucid-origin/ (width/height maximum)
       maxDimension: 2500,
+      maxDimensionDocumented: true,
       defaultWidth: 1120,
       defaultHeight: 1120,
       steps: "num_steps",
@@ -575,12 +633,16 @@ const models: readonly MediaModel[] = Object.freeze([
   }),
   freezeModel({
     id: "@cf/leonardo/phoenix-1.0",
+    // Workers AI documents no prompt maxLength for this model; keep the 2,048 host cap.
+    maxPromptLength: UNDOCUMENTED_PROMPT_LENGTH,
     tier: "balanced",
     label: "Leonardo Phoenix 1.0 — best prompt adherence",
     input: {
       transport: "json",
       dimensions: "own",
+      // https://developers.cloudflare.com/workers-ai/models/phoenix-1.0/ (width/height range)
       maxDimension: 2048,
+      maxDimensionDocumented: true,
       defaultWidth: 1024,
       defaultHeight: 1024,
       steps: "num_steps",
@@ -594,6 +656,8 @@ const models: readonly MediaModel[] = Object.freeze([
   // image model and ByteDance's video model return a result URL, not bytes.
   freezeModel({
     id: "openai/gpt-image-2",
+    // 32,000 characters: OpenAI's Images API reference gives GPT image models a 32000-character prompt limit.
+    maxPromptLength: 32_000,
     outputFormats: Object.freeze(["png", "jpeg", "webp"]),
     tier: "premium",
     label: "GPT Image 2 — strong text and layout, premium",
@@ -602,13 +666,19 @@ const models: readonly MediaModel[] = Object.freeze([
       transport: "json",
       dimensions: "own",
       maxDimension: 1536,
+      maxDimensionDocumented: false,
       defaultWidth: 1024,
       defaultHeight: 1024,
       steps: "fixed",
       maxSteps: null,
       defaultSteps: null,
-      referenceField: null,
-      maxReferences: 0,
+      // Cloudflare documents `images[]` (base64 strings or data URIs, 1-16
+      // entries, routed to OpenAI's /v1/images/edits) for this exact model:
+      // https://developers.cloudflare.com/ai/models/openai/gpt-image-2/
+      // OpenAI's own page shows multipart `image[]` without stating a cap, so
+      // 16 is Cloudflare's published schema limit, the route Prints calls.
+      referenceField: "images",
+      maxReferences: 16,
     },
   }),
   videoModel(

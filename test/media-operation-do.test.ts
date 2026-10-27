@@ -1170,7 +1170,8 @@ describe("MediaOperationOwner internal durable owner", () => {
         expect.objectContaining({
           image: `data:image/png;base64,${btoa(String.fromCharCode(...reference.bytes))}`,
         }),
-        { gateway: { id: "fungi-hub" } },
+        // A first-frame input bypasses the AI Gateway; metering still settles below.
+        {},
       );
       await expect(
         executeVideo(test.owner, billing.metering, write, vi.fn(), input, [

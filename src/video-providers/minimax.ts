@@ -9,8 +9,7 @@ import { imageDataUri } from "./reference-encoding.js";
 import type { VideoProviderAdapter } from "./types.js";
 
 /** MiniMax's documented `content[]` image role, distinct from our neutral one. */
-export type MinimaxReferenceRole =
-  "first_frame" | "last_frame" | "reference_image";
+export type MinimaxReferenceRole = "first_frame" | "reference_image";
 /** One MiniMax `content[]` entry, exactly as its schema documents it. */
 export type MinimaxContentItem =
   | { type: "text"; text: string }
@@ -40,9 +39,8 @@ const minimaxResolutionWire = {
 /** Our neutral reference role to MiniMax's documented `content[]` role. */
 const minimaxRoleWire = {
   "first-frame": "first_frame",
-  "last-frame": "last_frame",
   reference: "reference_image",
-} satisfies Record<MediaVideoReferenceRole, MinimaxReferenceRole>;
+} satisfies Partial<Record<MediaVideoReferenceRole, MinimaxReferenceRole>>;
 
 /** MiniMax's documented task wrapper: `{task: {status, content: {url}}}`,
  * distinct from the Unified gateway's `{state, result}` shape Seedance and
@@ -67,7 +65,10 @@ export const minimaxVideoAdapter: VideoProviderAdapter = {
     ];
     references.forEach((image, index) => {
       const role = checked.references?.[index]?.role;
-      const wireRole = role === undefined ? undefined : minimaxRoleWire[role];
+      const wireRole =
+        role === undefined || role === "last-frame"
+          ? undefined
+          : minimaxRoleWire[role];
       if (wireRole === undefined)
         throw new MediaSettingsError("video reference role was not admitted");
       content.push({

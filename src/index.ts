@@ -2,11 +2,13 @@ import * as z from "zod";
 import { reportCatchFailure } from "./failure.js";
 import {
   getMediaModel,
+  MAX_REFERENCE_COUNT,
   MediaSettingsError,
   mediaVideoModelIdSchema,
   mediaVideoResolutionSchema,
   mediaVideoAspectRatioSchema,
   mediaVideoReferenceRoleSchema,
+  MAX_MEDIA_PROMPT_LENGTH,
   type MediaVideoReferenceRole,
   type MediaVideoModelId,
   type MediaVideoResolution,
@@ -16,7 +18,9 @@ import {
 export { mediaFailureStageSchema } from "./execution-error.js";
 
 export {
+  MAX_MEDIA_PROMPT_LENGTH,
   getMediaModel,
+  MAX_REFERENCE_COUNT,
   listMediaModels,
   mediaModelInputSchema,
   mediaModelSchema,
@@ -138,8 +142,8 @@ export type ImageViewFitter = (
   maxDimension: number,
 ) => Promise<FittedReferenceImage>;
 
-/** Maximum reference files in one generation request. */
-export const MAX_REFERENCE_COUNT = 4;
+/** Reference images in one video request: every verified video model's catalog value. */
+const MAX_VIDEO_REFERENCE_COUNT = 4;
 /** Maximum reference width and height sent to inference, in pixels. */
 export const MAX_REFERENCE_DIMENSION = 512;
 /** Maximum decoded bytes per reference image. */
@@ -183,8 +187,8 @@ export const mediaGenerationSettingsSchema = z
   .object({
     /** Provider catalog model identifier. */
     model: z.string().min(1).max(256),
-    /** Generation prompt. */
-    prompt: z.string().min(1).max(2_048),
+    /** Generation prompt; each model's `maxPromptLength` is enforced on top of this ceiling. */
+    prompt: z.string().min(1).max(MAX_MEDIA_PROMPT_LENGTH),
     /** Requested image width or nominal video selector, not decoded MP4 dimensions. */
     width: z.number().int().min(1).max(5_040),
     /** Requested image height or nominal video selector, not decoded MP4 dimensions. */
@@ -313,6 +317,10 @@ function normalizeGenerationSettings<
   if (model === undefined)
     throw new MediaSettingsError(`unknown Media model "${modelId}"`);
   const prompt = requiredString(input.prompt, "prompt");
+  if (prompt.length > model.maxPromptLength)
+    throw new MediaSettingsError(
+      `${model.id} prompt is ${String(prompt.length)} characters; its limit is ${String(model.maxPromptLength)}`,
+    );
   const maximumDimension = model.video === null ? 4_096 : 5_040;
   const width = boundedInteger(input.width, "width", 1, maximumDimension);
   const height = boundedInteger(input.height, "height", 1, maximumDimension);
@@ -357,10 +365,6 @@ function normalizeGenerationSettings<
     if (!model.video.durations.includes(durationSeconds))
       throw new MediaSettingsError(
         `${model.id} accepts durationSeconds ${model.video.durations.join(", ")}`,
-      );
-    if (prompt.length > model.video.maxPromptLength)
-      throw new MediaSettingsError(
-        `${model.id} prompt exceeds ${String(model.video.maxPromptLength)} characters`,
       );
   }
 
@@ -425,35 +429,44 @@ function normalizeGenerationSettings<
         role: reference.role ?? mediaVideoReferenceRoleSchema.enum.first,
       }));
       const roles = references.map((reference) => reference.role);
-      if (
-        roles.some(
-          (role) => role === undefined || !video.referenceRoles.includes(role),
-        )
-      )
+      const refused = roles.find(
+        (role) => role === undefined || !video.referenceRoles.includes(role),
+      );
+      if (refused !== undefined || roles.includes(undefined))
         throw new MediaSettingsError(
-          `${model.id} does not accept this frame/reference role`,
+          refused === "last-frame"
+            ? `${model.label} has no last frame`
+            : `${model.label} does not take ${String(refused)} images`,
         );
       const first = roles.filter((role) => role === "first-frame").length;
       const last = roles.filter((role) => role === "last-frame").length;
       const referenceCount = roles.filter(
         (role) => role === "reference",
       ).length;
-      if (
-        first > 1 ||
-        last > 1 ||
-        (last > 0 && first !== 1) ||
-        (referenceCount > 0 && first + last > 0)
-      )
+      if (first > 1 || last > 1)
         throw new MediaSettingsError(
-          "video frame and reference modes cannot mix; last frame requires one first frame",
+          video.referenceRoles.includes("last-frame")
+            ? `${model.label} takes one first frame and one last frame`
+            : `${model.label} takes one first frame`,
+        );
+      if (last > 0 && first !== 1)
+        throw new MediaSettingsError(
+          "A last frame needs a first frame as well",
+        );
+      if (referenceCount > 0 && first + last > 0)
+        throw new MediaSettingsError(
+          "Frames and references cannot be mixed; use a first/last frame or references",
+        );
+      if (referenceCount > video.maxReferenceImages)
+        throw new MediaSettingsError(
+          `${model.label} takes up to ${String(video.maxReferenceImages)} reference images`,
         );
       if (
-        referenceCount > video.maxReferenceImages ||
-        (referenceCount > 0 &&
-          !video.referenceResolutions.includes(format.resolution))
+        referenceCount > 0 &&
+        !video.referenceResolutions.includes(format.resolution)
       )
         throw new MediaSettingsError(
-          `${model.id} does not accept reference-image mode at this resolution/count`,
+          `${model.label} takes reference images only at ${video.referenceResolutions.join(", ")}`,
         );
     }
   }
@@ -478,8 +491,8 @@ export const mediaVideoSelectionSchema = z.lazy(() =>
   z.strictObject({
     /** Verified catalog model identifier. */
     model: mediaVideoModelIdSchema,
-    /** Trimmed prompt; Seedance allows 2,000 characters, Veo uses the retained host cap of 2,048. */
-    prompt: z.string().min(1).max(2_048),
+    /** Trimmed prompt; the selected model's `maxPromptLength` is enforced on top of this ceiling. */
+    prompt: z.string().min(1).max(MAX_MEDIA_PROMPT_LENGTH),
     /** Model-specific resolution, default 720p. */
     resolution: mediaVideoResolutionSchema.optional(),
     /** Model-specific aspect, default 16:9. */
@@ -492,7 +505,7 @@ export const mediaVideoSelectionSchema = z.lazy(() =>
     /** Up to four references, with provider-specific roles and mode limits. */
     references: z
       .array(mediaVideoReferenceSchema)
-      .max(MAX_REFERENCE_COUNT)
+      .max(MAX_VIDEO_REFERENCE_COUNT)
       .optional(),
   }),
 );

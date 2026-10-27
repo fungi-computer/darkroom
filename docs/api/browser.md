@@ -156,3 +156,9 @@ Read and decode one Media host failure at the browser HTTP boundary.
 `"AiInternalError"` \| `"TypeError"` \| `"AbortError"` \| `"TimeoutError"` \|
 `"Error"`; `code`: `number` \| `null`; \}\> \| `Readonly`\<\{ `category`:
 `"result_download"`; `status`: `number`; \}\>; \} \| `null`\>
+
+## References
+
+### MAX\_MEDIA\_PROMPT\_LENGTH
+
+Re-exports [MAX_MEDIA_PROMPT_LENGTH](index.md#max_media_prompt_length)
