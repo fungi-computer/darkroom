@@ -53,6 +53,14 @@ readonly provider: MediaProviderDiagnostic | undefined;
 
 Safe provider facts only; the original cause remains private.
 
+##### customerCharge
+
+```ts
+readonly customerCharge: "none" | "unknown";
+```
+
+Unknown unless the execution owner confirmed zero-unit settlement.
+
 ##### stage
 
 ```ts
@@ -780,9 +788,10 @@ Private cause plus an independently decoded, safe provider diagnostic.
 
 #### Type Declaration
 
-| Name        | Type                      | Description                                                         |
-| ----------- | ------------------------- | ------------------------------------------------------------------- |
-| `provider?` | `MediaProviderDiagnostic` | Safe provider facts, when the failure came from provider transport. |
+| Name              | Type                      | Description                                                               |
+| ----------------- | ------------------------- | ------------------------------------------------------------------------- |
+| `provider?`       | `MediaProviderDiagnostic` | Safe provider facts, when the failure came from provider transport.       |
+| `customerCharge?` | `"none"`                  | Confirmed zero-unit customer settlement, never an upstream billing claim. |
 
 ---
 
@@ -1457,7 +1466,7 @@ type MediaServiceHost = Readonly<{
   destination: Readonly<{
      authorize: (path) => Promise<void>;
      write: (path, bytes) => Promise<void>;
-     readReference?: (reference) => Promise<MediaReferenceBytes>;
+     readReference?: (reference, model) => Promise<MediaReferenceBytes>;
   }>;
   onFailure?: (error) => Response | undefined;
 }> &
@@ -1554,6 +1563,7 @@ const mediaImageBindingInputSchema: ZodObject<{
      }>>;
      generateAudio: ZodOptional<ZodBoolean>;
      references: ZodOptional<ZodArray<ZodObject<{
+        computerId: ZodOptional<ZodString>;
         path: ZodString;
         role: ZodOptional<ZodEnum<{
            first: ...;
@@ -1652,6 +1662,7 @@ const mediaBindingGenerationSchema: ZodDiscriminatedUnion<[ZodObject<{
      }>>;
      generateAudio: ZodOptional<ZodBoolean>;
      references: ZodOptional<ZodArray<ZodObject<{
+        computerId: ZodOptional<...>;
         path: ZodString;
         role: ZodOptional<...>;
      }, $strict>>>;
@@ -1749,7 +1760,7 @@ const mediaBindingCallSchema: ZodDiscriminatedUnion<[ZodObject<{
 }, $strict>], "operation">;
 ```
 
-Maintained MEDIA method grammar; guest input carries no principal or Computer.
+Maintained MEDIA grammar; reference selectors carry no Computer authority.
 
 ---
 
@@ -1946,6 +1957,31 @@ const mediaRequestSchema: ZodObject<{
 Decode relative service generation input. Identity comes from the host.
 
 ## Functions
+
+### estimateMediaModel()
+
+```ts
+function estimateMediaModel(model): object;
+```
+
+Quote the catalog defaults through the exact estimator used before dispatch.
+
+#### Parameters
+
+| Parameter | Type                                |
+| --------- | ----------------------------------- |
+| `model`   | [`MediaModel`](index.md#mediamodel) |
+
+#### Returns
+
+| Name             | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Description                                                       |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `kind`           | `"estimate"`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | An indicative quote, not an admitted generation receipt.          |
+| `basis`          | `"provider-cost"`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Provider cost before the host's billing policy.                   |
+| `settings`       | `Readonly`\<\{ `model`: `string`; `prompt`: `string`; `width`: `number`; `height`: `number`; `steps?`: `number`; `durationSeconds?`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: readonly `Readonly`\<\{ `computerId`: `string`; `path`: `string`; `role?`: `"first-frame"` \| `"last-frame"` \| `"reference"`; \}\>[]; \}\> | Catalog defaults, a one-character prompt and no references.       |
+| `costMilliunits` | `number`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Estimated provider milliunits of a cent for these exact settings. |
+
+---
 
 ### mediaUnits()
 

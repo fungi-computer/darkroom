@@ -1,5 +1,27 @@
 # @fungi.computer/darkroom
 
+## 0.4.0
+
+### Minor Changes
+
+- Changes since 0.3.1:
+
+  - fix(darkroom): retain interruption cleanup failures
+  - fix(darkroom): fit video references by their short edge
+  - fix(prints): resume video attempts on reopen with honest progress
+  - fix(prints): map provider failures to one error toast
+  - feat(prints): add authorized Agent media parity
+  - fix(prints): consume typed credits refusals and admitted media kind
+  - fix(darkroom): retain a typed provider credits exhaustion reason
+  - fix(prints): merge video recovery and charge-safe failures
+  - fix(prints): repair Agent parity gate regressions
+  - fix(prints): reconcile Agent media parity with integration
+
+### Patch Changes
+
+- Updated dependencies
+  - @fungi.computer/agar@0.6.0
+
 ## 0.3.1
 
 ### Patch Changes

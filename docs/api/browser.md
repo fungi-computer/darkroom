@@ -65,23 +65,12 @@ const mediaFailureSchema: ZodObject<{
      INSUFFICIENT_CREDIT: "INSUFFICIENT_CREDIT";
      HOST_FAILURE: "HOST_FAILURE";
      INVALID_ARGUMENT: "INVALID_ARGUMENT";
+     MEDIA_PROVIDER_FAILURE: "MEDIA_PROVIDER_FAILURE";
+     MEDIA_PROVIDER_FAILURE_UNCHARGED: "MEDIA_PROVIDER_FAILURE_UNCHARGED";
      SAFETY_FILTER_REFUSED: "SAFETY_FILTER_REFUSED";
   }>;
   retryable: ZodBoolean;
-  provider: ZodOptional<ZodPipe<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodTransform<
-     | Readonly<{
-     category:   | "InferenceUpstreamError"
-        | "AiInternalError"
-        | "TypeError"
-        | "AbortError"
-        | "TimeoutError"
-        | "Error";
-     code: number | null;
-   }>
-     | Readonly<{
-     category: "result_download";
-     status: number;
-  }>, unknown>>>;
+  provider: ZodOptional<ZodType<MediaProviderDiagnostic, unknown, $ZodTypeInternals<MediaProviderDiagnostic, unknown>>>;
 }, $strict>;
 ```
 
@@ -115,23 +104,11 @@ function readMediaFailure(
     | "INSUFFICIENT_CREDIT"
     | "HOST_FAILURE"
     | "INVALID_ARGUMENT"
+    | "MEDIA_PROVIDER_FAILURE"
+    | "MEDIA_PROVIDER_FAILURE_UNCHARGED"
     | "SAFETY_FILTER_REFUSED";
   retryable: boolean;
-  provider?:
-    | Readonly<{
-        category:
-          | "InferenceUpstreamError"
-          | "AiInternalError"
-          | "TypeError"
-          | "AbortError"
-          | "TimeoutError"
-          | "Error";
-        code: number | null;
-      }>
-    | Readonly<{
-        category: "result_download";
-        status: number;
-      }>;
+  provider?: MediaProviderDiagnostic;
 } | null>;
 ```
 
@@ -151,11 +128,9 @@ Read and decode one Media host failure at the browser HTTP boundary.
 \| `"operation"` \| `"normalization"` \| `"artifact"` \|
 `"destination-authorization"` \| `"destination-write"`; `code`: \|
 `"CAPABILITY_DENIED"` \| `"INSUFFICIENT_CREDIT"` \| `"HOST_FAILURE"` \|
-`"INVALID_ARGUMENT"` \| `"SAFETY_FILTER_REFUSED"`; `retryable`: `boolean`;
-`provider?`: \| `Readonly`\<\{ `category`: \| `"InferenceUpstreamError"` \|
-`"AiInternalError"` \| `"TypeError"` \| `"AbortError"` \| `"TimeoutError"` \|
-`"Error"`; `code`: `number` \| `null`; \}\> \| `Readonly`\<\{ `category`:
-`"result_download"`; `status`: `number`; \}\>; \} \| `null`\>
+`"INVALID_ARGUMENT"` \| `"MEDIA_PROVIDER_FAILURE"` \|
+`"MEDIA_PROVIDER_FAILURE_UNCHARGED"` \| `"SAFETY_FILTER_REFUSED"`; `retryable`:
+`boolean`; `provider?`: `MediaProviderDiagnostic`; \} \| `null`\>
 
 ## References
 

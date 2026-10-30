@@ -1,5 +1,7 @@
 import * as z from "zod";
 import { reportCatchFailure } from "./failure.js";
+import { referenceImageSizeIsValid } from "./reference-image-size.js";
+export { MAX_REFERENCE_DIMENSION } from "./reference-image-size.js";
 import {
   getMediaModel,
   MAX_REFERENCE_COUNT,
@@ -117,11 +119,12 @@ export type MediaProvider = (
   }>
 >;
 
-/** A decoded reference image, scaled within MAX_REFERENCE_DIMENSION. */
+/** A decoded reference image, fitted for the selected model. */
 export type FittedReferenceImage = Omit<MediaReferenceBytes, "filename">;
-/** Decode one reference image and scale it within Media's dimension bound. */
+/** Decode and fit a reference: image long edge ≤512, video short edge ≥320. */
 export type ReferenceImageFitter = (
   bytes: Uint8Array,
+  model: string,
 ) => Promise<FittedReferenceImage>;
 
 /** The long-edge bounds a viewer may ask for when fitting an image to look at. */
@@ -144,8 +147,6 @@ export type ImageViewFitter = (
 
 /** Reference images in one video request: every verified video model's catalog value. */
 const MAX_VIDEO_REFERENCE_COUNT = 4;
-/** Maximum reference width and height sent to inference, in pixels. */
-export const MAX_REFERENCE_DIMENSION = 512;
 /** Maximum decoded bytes per reference image. */
 export const MAX_REFERENCE_BYTES = 8 * 1024 * 1024;
 /** Maximum retained still-image output bytes. */
@@ -225,7 +226,7 @@ export const mediaGenerationSettingsSchema = z
 export type MediaGenerationSettingsInput = z.input<
   typeof mediaGenerationSettingsSchema
 >;
-/** App selections contain paths; the host supplies the admitted Computer. */
+/** A reference may select another Computer; identity never grants access. */
 export const mediaGenerationSelectionSchema =
   mediaGenerationSettingsSchema.extend({
     /** Host-authorized reference images. */
@@ -233,6 +234,8 @@ export const mediaGenerationSelectionSchema =
       .array(
         z
           .object({
+            /** Omit for the selected Computer; the host authorizes every named Computer. */
+            computerId: z.string().min(1).max(256).optional(),
             /** Fixed destination or reference file path. */
             path: z.string().min(1).max(4_096),
             /** Video-only reference role. */
@@ -273,7 +276,7 @@ export const validateMediaGenerationSettings = (
   return normalizeGenerationSettings(parsed.data, normalizeReference);
 };
 
-/** Validate path-only selections without inventing a Computer identity. */
+/** Validate selections without granting Computer authority. */
 export const validateMediaGenerationSelection = (
   raw: z.input<typeof mediaGenerationSelectionSchema>,
 ): Readonly<
@@ -282,6 +285,8 @@ export const validateMediaGenerationSelection = (
     references?: readonly Readonly<{
       /** Fixed destination or reference file path. */
       path: string;
+      /** Optional reference Computer; authorization remains host-owned. */
+      computerId?: string;
       /** Video-only reference role. */
       role?: MediaVideoReferenceRole;
     }>[];
@@ -291,9 +296,11 @@ export const validateMediaGenerationSelection = (
   if (!parsed.success)
     throw new MediaSettingsError("generation settings are invalid");
   return normalizeGenerationSettings(parsed.data, (reference) => {
-    const selection = {
-      path: requiredString(reference.path, "reference path"),
-    };
+    const path = requiredString(reference.path, "reference path");
+    const selection =
+      reference.computerId === undefined
+        ? { path }
+        : { path, computerId: reference.computerId };
     if (reference.role === undefined) return selection;
     return { ...selection, role: reference.role };
   });
@@ -583,8 +590,11 @@ export function validateMediaVideoSelection(
 
 /** Host-authorized reader for decoded reference images. */
 export type MediaReferenceReader = Readonly<{
-  /** Authorize and read one reference into bounded decoded image bytes. */
-  read: (reference: MediaReference) => Promise<MediaReferenceBytes>;
+  /** Authorize and fit one reference for the selected catalog model. */
+  read: (
+    reference: MediaReference,
+    model: string,
+  ) => Promise<MediaReferenceBytes>;
 }>;
 const imageFormats = new Set<ImageFormat>(["png", "jpeg", "gif", "webp"]);
 
@@ -602,15 +612,14 @@ export const resolveMediaReferences = async (
     );
   const resolved: MediaReferenceBytes[] = [];
   for (const reference of references) {
-    const image = await reader.read(reference);
+    const image = await reader.read(reference, settings.model);
     if (
       !imageFormats.has(image.format) ||
       !Number.isSafeInteger(image.width) ||
       !Number.isSafeInteger(image.height) ||
       image.width < 1 ||
       image.height < 1 ||
-      image.width > MAX_REFERENCE_DIMENSION ||
-      image.height > MAX_REFERENCE_DIMENSION ||
+      !referenceImageSizeIsValid(settings.model, image.width, image.height) ||
       !(image.bytes instanceof Uint8Array) ||
       image.bytes.byteLength === 0 ||
       image.bytes.byteLength > MAX_REFERENCE_BYTES

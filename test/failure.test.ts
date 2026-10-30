@@ -1,6 +1,7 @@
 import { inspect } from "node:util";
 import * as Redacted from "effect/Redacted";
 import { afterEach, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { generate, type MediaAiPort } from "../src/cloudflare/provider.js";
 import { validateMediaGenerationSettings } from "../src/index.js";
 import { reportCatchFailure } from "../src/failure.js";
@@ -91,3 +92,99 @@ it("keeps an ordinary 8007 failure opaque instead of treating its number as a sa
   expect(JSON.stringify(report.mock.calls)).toContain('"providerCode":8007');
   expect(inspect(report.mock.calls, { depth: null })).not.toContain(marker);
 });
+
+it("recognizes the captured Flux output rejection without treating 3030 as transient", async () => {
+  const report = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  // Exact upstream message observed in the retained Prints request's REST
+  // replay, 2026-10-29. Workers AI prefixes binding errors with the code.
+  const cause = new Error(
+    "3030: AiError: AiError: Your output has been flagged. Please choose another prompt / input image combination (5dbf4c51-d344-437d-b202-7bdd4310a043)",
+  );
+  const run = vi.fn<MediaAiPort["run"]>().mockRejectedValue(cause);
+  const settings = validateMediaGenerationSettings({
+    model: "@cf/black-forest-labs/flux-2-klein-4b",
+    prompt: "This little guy dunking a baskettball",
+    width: 1280,
+    height: 720,
+  });
+  await expect(generate({ run }, settings, [])).rejects.toMatchObject({
+    name: "MediaSafetyFilterRefusal",
+    stage: "provider",
+    cause,
+    provider: { code: 3030 },
+  });
+  expect(run).toHaveBeenCalledOnce();
+  expect(report).toHaveBeenCalledWith(
+    "Media provider request failed",
+    expect.objectContaining({
+      model: settings.model,
+      providerCode: 3030,
+      category: "Error",
+      providerMessage: cause.message,
+    }),
+    expect.anything(),
+  );
+});
+
+it("retries documented capacity exhaustion once with a fresh multipart stream, then stops", async () => {
+  // https://developers.cloudflare.com/workers-ai/platform/errors/
+  // 3040: "Capacity temporarily exceeded, please try again."
+  const diagnostic = vi
+    .spyOn(console, "error")
+    .mockImplementation(() => undefined);
+  const bodies: FormData[] = [];
+  const multipart = z.object({
+    multipart: z.object({
+      body: z.instanceof(ReadableStream),
+      contentType: z.string(),
+    }),
+  });
+  const run = vi.fn<MediaAiPort["run"]>(async (_model, input) => {
+    const checked = multipart.parse(input).multipart;
+    bodies.push(
+      await new Response(checked.body, {
+        headers: { "Content-Type": checked.contentType },
+      }).formData(),
+    );
+    throw new Error("3040: Capacity temporarily exceeded, please try again.");
+  });
+  const settings = validateMediaGenerationSettings({
+    model: "@cf/black-forest-labs/flux-2-klein-4b",
+    prompt: "a mushroom on a basketball court",
+    width: 1024,
+    height: 768,
+  });
+  await expect(generate({ run }, settings, [])).rejects.toMatchObject({
+    stage: "provider",
+    provider: { code: 3040 },
+  });
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(diagnostic).toHaveBeenCalledOnce();
+  expect(bodies).toHaveLength(2);
+  for (const body of bodies) {
+    expect(body.get("prompt")).toBe("a mushroom on a basketball court");
+    expect(body.get("width")).toBe("1024");
+    expect(body.get("height")).toBe("768");
+  }
+});
+
+it.each([3030, 3043, 3007, 3008])(
+  "does not infer automatic retry permission from provider code %i",
+  async (code) => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const run = vi
+      .fn<MediaAiPort["run"]>()
+      .mockRejectedValue(new Error(`${String(code)}: upstream details`));
+    const settings = validateMediaGenerationSettings({
+      model: "@cf/black-forest-labs/flux-2-klein-4b",
+      prompt: "a mushroom on a basketball court",
+      width: 1024,
+      height: 768,
+    });
+    await expect(generate({ run }, settings, [])).rejects.toMatchObject({
+      name: "MediaExecutionError",
+      provider: { code },
+    });
+    expect(run).toHaveBeenCalledOnce();
+  },
+);

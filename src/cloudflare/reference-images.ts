@@ -1,12 +1,12 @@
 import { z } from "zod";
 import {
   MAX_REFERENCE_BYTES,
-  MAX_REFERENCE_DIMENSION,
   MediaSettingsError,
   viewDimensionSchema,
   type ImageViewFitter,
   type ReferenceImageFitter,
 } from "../index.js";
+import { referenceImageTransform } from "../reference-image-size.js";
 
 /** The retained `read_image` encoding: JPEG at quality 80. */
 const VIEW_JPEG_QUALITY = 80;
@@ -39,13 +39,13 @@ export type MediaImagePort = {
   info(input: ReadableStream<Uint8Array>): ReturnType<ImagesBinding["info"]>;
   /** Start the native resize and encode chain. */
   input(input: ReadableStream<Uint8Array>): {
-    /** Apply the native scale-down transform. */
+    /** Apply the native aspect-preserving resize. */
     transform(options: {
       /** Image width in pixels. */
       width: number;
       /** Image height in pixels. */
       height: number;
-      fit: "scale-down";
+      fit: "scale-down" | "contain";
     }): {
       /** Encode the transformed image through the native Images binding. */
       output(
@@ -69,13 +69,13 @@ export type MediaImagePort = {
 
 /**
  * Media's reference preparation on the Images binding: decode the real bytes,
- * scale an oversized image down to MAX_REFERENCE_DIMENSION as PNG, then decode
- * the output so its metadata describes the bytes actually sent.
+ * fit the selected model's reference size as PNG, then decode the output so
+ * its metadata describes the bytes actually sent.
  */
 export function createImagesReferenceFitter(
   images: MediaImagePort,
 ): ReferenceImageFitter {
-  return async (input) => {
+  return async (input, model) => {
     let bytes = input;
     let info: z.output<typeof metadata>;
     try {
@@ -84,17 +84,11 @@ export function createImagesReferenceFitter(
       // The Images failure detail is never surfaced; the caller's bytes are.
       throw new MediaSettingsError("reference image is not a supported image");
     }
-    if (
-      info.width > MAX_REFERENCE_DIMENSION ||
-      info.height > MAX_REFERENCE_DIMENSION
-    ) {
+    const transform = referenceImageTransform(model, info.width, info.height);
+    if (info.width !== transform.width || info.height !== transform.height) {
       const output = await images
         .input(stream(bytes))
-        .transform({
-          width: MAX_REFERENCE_DIMENSION,
-          height: MAX_REFERENCE_DIMENSION,
-          fit: "scale-down",
-        })
+        .transform(transform)
         .output({
           format: "image/png",
         });

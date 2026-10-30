@@ -5,6 +5,7 @@ import {
   type MediaFailureStage,
 } from "./execution-error.js";
 import * as Effect from "effect/Effect";
+import { reportCatchFailure } from "./failure.js";
 
 import { mediaUnits } from "./gateway-models.js";
 import { getMediaModel } from "./model-catalog.js";
@@ -24,6 +25,17 @@ type GeneratedMedia = Readonly<{
 }>;
 
 import type { MediaExecution } from "./media-operation-contract.js";
+
+function unchargedFailure(error: MediaExecutionError): MediaExecutionError {
+  const options = {
+    cause: error.cause,
+    provider: error.provider,
+    customerCharge: "none" as const,
+  };
+  return error instanceof MediaSafetyFilterRefusal
+    ? new MediaSafetyFilterRefusal(options)
+    : new MediaExecutionError(error.stage, options);
+}
 
 function call<A>(body: () => A | Promise<A>, stage: MediaFailureStage) {
   return Effect.tryPromise({
@@ -89,14 +101,16 @@ export function executeMediaOperation(input: MediaExecution) {
       ),
     );
     const background = getMediaModel(input.request.model)?.kind === "video";
-    /** Release a held price when nothing will be delivered; best effort, idempotent. */
+    /** Best-effort release; true proves customer settlement, not supplier billing. */
     const settleNothing = () =>
       metering === null
-        ? Effect.void
+        ? Effect.succeed(false)
         : call(
             () => metering.settle({ operationId, units: 0 }),
             "billing",
-          ).pipe(Effect.ignore);
+          ).pipe(
+            Effect.match({ onFailure: () => false, onSuccess: () => true }),
+          );
     const claim = yield* call(() => input.operation.claim(), "operation");
     if (
       claim.kind === "succeeded" &&
@@ -122,16 +136,16 @@ export function executeMediaOperation(input: MediaExecution) {
       );
     }
     if (claim.kind === "interrupted") {
-      yield* settleNothing();
+      const uncharged = yield* settleNothing();
       const failure = claim.operation.providerFailure;
-      if (failure !== null)
-        return yield* Effect.fail(
-          failure.safetyRefused
-            ? new MediaSafetyFilterRefusal({ provider: failure.provider })
-            : new MediaExecutionError(failure.stage, {
-                provider: failure.provider,
-              }),
-        );
+      if (failure !== null) {
+        const error = failure.safetyRefused
+          ? new MediaSafetyFilterRefusal({ provider: failure.provider })
+          : new MediaExecutionError(failure.stage, {
+              provider: failure.provider,
+            });
+        return yield* Effect.fail(uncharged ? unchargedFailure(error) : error);
+      }
     }
     if (claim.kind !== "claimed" || claim.leaseId === undefined)
       return {
@@ -240,10 +254,11 @@ export function executeMediaOperation(input: MediaExecution) {
         }, "provider").pipe(
           // A provider failure delivered nothing and wrote no output: end the
           // request now and release its hold rather than leave it unresolved.
-          Effect.tapError((error) => {
-            const stage = error.stage;
-            return stage === "provider" || stage === "normalization"
-              ? call(
+          Effect.catch((error) =>
+            Effect.gen(function* () {
+              const stage = error.stage;
+              if (stage === "provider" || stage === "normalization") {
+                const uncharged = yield* call(
                   () =>
                     input.operation.interruptGeneration(leaseId, {
                       stage,
@@ -251,9 +266,19 @@ export function executeMediaOperation(input: MediaExecution) {
                       provider: error.provider,
                     }),
                   "operation",
-                ).pipe(Effect.andThen(settleNothing()), Effect.ignore)
-              : Effect.void;
-          }),
+                ).pipe(
+                  Effect.andThen(settleNothing()),
+                  Effect.catch((cause) => {
+                    reportCatchFailure("media-operation-interrupt", cause);
+                    return Effect.succeed(false);
+                  }),
+                );
+                if (uncharged)
+                  return yield* Effect.fail(unchargedFailure(error));
+              }
+              return yield* Effect.fail(error);
+            }),
+          ),
         );
         if (generation.kind === "interrupted") {
           yield* settleNothing();

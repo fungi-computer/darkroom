@@ -1,4 +1,6 @@
 import sharp from "sharp";
+import { inspect } from "node:util";
+import * as Redacted from "effect/Redacted";
 import * as Effect from "effect/Effect";
 import { executeMediaOperation } from "../src/media-operation.js";
 import type { MediaMetering } from "../src/media-operation-contract.js";
@@ -787,80 +789,119 @@ describe("MediaOperationOwner internal durable owner", () => {
       },
     );
 
-    it("explains a Workers AI safety refusal with safe facts but no private details or charging", async () => {
-      const test = fixture();
-      const billing = ledger();
-      const write = vi.fn(() => Promise.resolve());
-      const marker = "synthetic-private-provider-details";
-      const report = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
-      const run = vi.fn(() =>
-        Promise.reject(
-          new Error(
-            `8007: AiError: Input prompt contains NSFW content ${marker}`,
-          ),
-        ),
-      );
-      try {
-        const service = createMediaService({
-          scope: {
-            actorId: "actor-a",
-            namespace: "team-a",
-            owner: "installation-a",
-            destinationId: "computer-a",
-          },
-          operations: { getByName: () => test.owner },
-          provider: createWorkersAiMediaProvider({ run }),
-          metering: billing.metering,
-          refusalMessages,
-          destination: { authorize: () => Promise.resolve(), write },
-        });
-        const generationRequest = {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Request-Id": "request-a",
-          },
-          body: JSON.stringify({
-            path: request.path,
-            settings: {
-              model: "@cf/black-forest-labs/flux-1-schnell",
-              prompt: "A single tiny ink mushroom on a plain white background",
-              width: 1024,
-              height: 768,
-              steps: 1,
+    it.each([
+      {
+        label: "input refusal",
+        model: "@cf/black-forest-labs/flux-1-schnell",
+        providerMessage:
+          "8007: AiError: Input prompt contains NSFW content synthetic-private-provider-details",
+        providerCode: 8007,
+        status: 400,
+        code: "SAFETY_FILTER_REFUSED",
+        message:
+          "The model refused this generation. Change the prompt or reference image and send again.",
+      },
+      {
+        label: "captured output refusal",
+        model: "@cf/black-forest-labs/flux-2-klein-4b",
+        providerMessage:
+          "3030: AiError: AiError: Your output has been flagged. Please choose another prompt / input image combination (5dbf4c51-d344-437d-b202-7bdd4310a043)",
+        providerCode: 3030,
+        status: 400,
+        code: "SAFETY_FILTER_REFUSED",
+        message:
+          "The model refused this generation. Change the prompt or reference image and send again.",
+      },
+      {
+        label: "unclassified provider failure",
+        model: "@cf/black-forest-labs/flux-2-klein-4b",
+        providerMessage: "3030: synthetic-private-provider-details",
+        providerCode: 3030,
+        status: 503,
+        code: "MEDIA_PROVIDER_FAILURE_UNCHARGED",
+        message:
+          "The model couldn't complete this generation. You weren't charged. Change the prompt or model and send again.",
+      },
+    ])(
+      "explains $label with safe facts, no charging and no replay",
+      async ({
+        model,
+        providerMessage,
+        providerCode,
+        status,
+        code,
+        message,
+      }) => {
+        const test = fixture();
+        const billing = ledger();
+        const write = vi.fn(() => Promise.resolve());
+        const marker = "synthetic-private-provider-details";
+        const report = vi
+          .spyOn(console, "error")
+          .mockImplementation(() => undefined);
+        const run = vi.fn(() => Promise.reject(new Error(providerMessage)));
+        try {
+          const service = createMediaService({
+            scope: {
+              actorId: "actor-a",
+              namespace: "team-a",
+              owner: "installation-a",
+              destinationId: "computer-a",
             },
-          }),
-        };
-        const response = await service.request("/generate", generationRequest);
-        expect(response.status).toBe(400);
-        await expect(readMediaFailure(response)).resolves.toEqual({
-          error:
-            "The model's safety filter refused this prompt — try rewording.",
-          stage: "provider",
-          code: "SAFETY_FILTER_REFUSED",
-          retryable: false,
-          provider: { category: "Error", code: 8007 },
-        });
-        expect(billing.charges.get("media-operation-a")).toBe(0);
-        expect(billing.holds.size).toBe(0);
-        expect(write).not.toHaveBeenCalled();
-        expect((await test.owner.claim()).kind).toBe("interrupted");
-        const replay = await service.request("/generate", generationRequest);
-        expect(replay.status).toBe(400);
-        await expect(readMediaFailure(replay)).resolves.toMatchObject({
-          code: "SAFETY_FILTER_REFUSED",
-          retryable: false,
-          provider: { category: "Error", code: 8007 },
-        });
-        expect(run).toHaveBeenCalledOnce();
-        expect(JSON.stringify(report.mock.calls)).not.toContain(marker);
-      } finally {
-        report.mockRestore();
-        test.close();
-      }
-    });
+            operations: { getByName: () => test.owner },
+            provider: createWorkersAiMediaProvider({ run }),
+            metering: billing.metering,
+            refusalMessages,
+            destination: { authorize: () => Promise.resolve(), write },
+          });
+          const generationRequest = {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Request-Id": "request-a",
+            },
+            body: JSON.stringify({
+              path: request.path,
+              settings: {
+                model,
+                prompt:
+                  "A single tiny ink mushroom on a plain white background",
+                width: 1024,
+                height: 768,
+              },
+            }),
+          };
+          const response = await service.request(
+            "/generate",
+            generationRequest,
+          );
+          expect(response.status).toBe(status);
+          await expect(readMediaFailure(response)).resolves.toEqual({
+            error: message,
+            stage: "provider",
+            code,
+            retryable: false,
+            provider: { category: "Error", code: providerCode },
+          });
+          expect(billing.charges.get("media-operation-a")).toBe(0);
+          expect(billing.holds.size).toBe(0);
+          expect(write).not.toHaveBeenCalled();
+          expect((await test.owner.claim()).kind).toBe("interrupted");
+          const replay = await service.request("/generate", generationRequest);
+          expect(replay.status).toBe(status);
+          await expect(readMediaFailure(replay)).resolves.toMatchObject({
+            code,
+            retryable: false,
+            provider: { category: "Error", code: providerCode },
+          });
+          expect(run).toHaveBeenCalledOnce();
+          expect(JSON.stringify(report.mock.calls)).not.toContain(marker);
+        } finally {
+          report.mockRestore();
+          test.close();
+        }
+      },
+    );
 
     it("charges nothing when the provider fails and ends the request", async () => {
       const test = fixture();
@@ -881,6 +922,60 @@ describe("MediaOperationOwner internal durable owner", () => {
       expect(test.owner.read()).toMatchObject({ state: "interrupted" });
       expect(write).not.toHaveBeenCalled();
       test.close();
+    });
+
+    it("retains an interrupt failure privately without claiming a released hold", async () => {
+      const test = fixture();
+      const billing = ledger();
+      const marker = "synthetic-private-interrupt-failure";
+      const cause = new Error(marker);
+      const interrupt = vi
+        .spyOn(test.owner, "interruptGeneration")
+        .mockImplementation(() => {
+          throw cause;
+        });
+      const report = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
+      const run = vi.fn(() => Promise.reject(new Error("provider down")));
+      const write = vi.fn(() => Promise.resolve());
+      try {
+        await expect(
+          execute(
+            test.owner,
+            "request-a",
+            run,
+            write,
+            undefined,
+            billing.metering,
+          ),
+        ).rejects.toThrow("Media provider failed");
+        expect(billing.charges.size).toBe(0);
+        expect(billing.holds.size).toBe(1);
+        expect(test.owner.read()).toMatchObject({ state: "generating" });
+        expect(run).toHaveBeenCalledOnce();
+        expect(write).not.toHaveBeenCalled();
+        expect(report).toHaveBeenCalledExactlyOnceWith(
+          "Media service operation failed",
+          { operation: "media-operation-interrupt", errorKind: "error" },
+          expect.anything(),
+        );
+        const retained: unknown = report.mock.calls[0]?.[2];
+        if (!Redacted.isRedacted(retained))
+          throw new Error("Interrupt failure was not retained as redacted");
+        expect(Redacted.value(retained)).toMatchObject({
+          stage: "operation",
+          cause,
+        });
+        expect(JSON.stringify(report.mock.calls)).not.toContain(marker);
+        expect(inspect(report.mock.calls, { depth: null })).not.toContain(
+          marker,
+        );
+      } finally {
+        interrupt.mockRestore();
+        report.mockRestore();
+        test.close();
+      }
     });
 
     it("retries a lost settlement without regenerating or rewriting", async () => {
@@ -1043,7 +1138,7 @@ describe("MediaOperationOwner internal durable owner", () => {
         expect(response.status).toBe(400);
         await expect(readMediaFailure(response)).resolves.toEqual({
           error:
-            "The model's safety filter refused this prompt — try rewording.",
+            "The model refused this generation. Change the prompt or reference image and send again.",
           stage: "provider",
           code: "SAFETY_FILTER_REFUSED",
           retryable: false,
@@ -1128,6 +1223,15 @@ describe("MediaOperationOwner internal durable owner", () => {
         costMilliunits: 86_250,
       });
       expect(write).toHaveBeenCalledExactlyOnceWith(mp4);
+      expect(billing.settlements).toEqual([
+        { operationId: "media-operation-a", units: 5 },
+      ]);
+      // Reopening and polling the same request cannot settle the hold twice.
+      await expect(
+        executeVideo(test.owner, billing.metering, write),
+      ).resolves.toMatchObject({ kind: "succeeded", costMilliunits: 86_250 });
+      expect(aiRun).toHaveBeenCalledOnce();
+      expect(write).toHaveBeenCalledOnce();
       expect(billing.settlements).toEqual([
         { operationId: "media-operation-a", units: 5 },
       ]);

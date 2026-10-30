@@ -9,6 +9,8 @@ import {
   mediaProviderWireSchema,
   resolveMediaReferences,
   validateMediaGenerationSettings,
+  validateMediaVideoSelection,
+  mediaVideoModelIdSchema,
   estimateImageMilliunits,
   estimateImageNeurons,
   type MediaReferenceBytes,
@@ -322,6 +324,39 @@ describe("retained Media reference boundary", () => {
       }),
     ).rejects.toThrow(/bounded/iu);
   });
+
+  it.each(mediaVideoModelIdSchema.options)(
+    "accepts fitted landscape and portrait video references for %s, not short edges below 320",
+    async (id) => {
+      const video = validateMediaGenerationSettings({
+        ...validateMediaVideoSelection({ model: id, prompt: base.prompt }),
+        references: [{ computerId: "c", path: "first.png" }],
+      });
+      for (const dimensions of [
+        { width: 640, height: 320 },
+        { width: 320, height: 640 },
+      ]) {
+        const read = vi.fn(() =>
+          Promise.resolve({ ...reference, ...dimensions }),
+        );
+        await expect(resolveMediaReferences(video, { read })).resolves.toEqual([
+          { ...reference, ...dimensions },
+        ]);
+        expect(read).toHaveBeenCalledWith(video.references?.[0], id);
+      }
+      for (const dimensions of [
+        { width: 512, height: 256 },
+        { width: 256, height: 512 },
+        { width: 640, height: 319 },
+        { width: 0, height: 320 },
+      ])
+        await expect(
+          resolveMediaReferences(video, {
+            read: () => Promise.resolve({ ...reference, ...dimensions }),
+          }),
+        ).rejects.toThrow(/bounded/iu);
+    },
+  );
 });
 
 describe("retained Media provider output boundary", () => {

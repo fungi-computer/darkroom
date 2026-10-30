@@ -3,10 +3,36 @@ import { listMediaModels, mediaModelSchema } from "./model-catalog.js";
 import { mediaResultSchema } from "./media-operation-contract.js";
 import { pendingSchema } from "@fungi.computer/agar/backend-definition";
 import { mediaFailureSchema } from "./browser-failure.js";
+import { mediaGenerationSettingsSchema } from "./index.js";
+
+/** A labelled estimate for one explicitly described generation, never a receipt. */
+export const mediaModelPriceEstimateSchema = z.strictObject({
+  /** Quotes are indicative; the admitted generation owns its charge. */
+  kind: z.literal("estimate"),
+  /** Unmetered hosts pay provider cost; funded hosts apply their billing policy. */
+  basis: z.enum({
+    /** Provider cost before the host's billing policy. */
+    "provider-cost": "provider-cost",
+    /** Team charge estimate after the host's billing policy. */
+    "team-price": "team-price",
+  }),
+  /** Milliunits of a cent, at the quoted settings. */
+  costMilliunits: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  /** Defaults, a one-character prompt and no references; varying these changes cost. */
+  settings: mediaGenerationSettingsSchema,
+});
+/** Host catalog projection; provider metadata remains owned by the sole catalog. */
+export const mediaCatalogModelSchema = mediaModelSchema
+  .unwrap()
+  .extend({
+    /** Optional host estimate with explicit assumptions and funding basis. */
+    priceEstimate: mediaModelPriceEstimateSchema.optional(),
+  })
+  .readonly();
 
 /** Bounded catalog decoded by the App media broker before host filtering. */
 export const mediaModelsSchema = z.lazy(() =>
-  z.array(mediaModelSchema).max(listMediaModels().length),
+  z.array(mediaCatalogModelSchema).max(listMediaModels().length),
 );
 
 /** An absolute output path on the Computer admitted by the App host. */

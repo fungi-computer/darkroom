@@ -77,12 +77,12 @@ export function runMediaGeneration(
       generation: {
         prepare: async () => {
           const references = await resolveMediaReferences(settings, {
-            read: (reference) => {
+            read: (reference, model) => {
               if (host.destination.readReference === undefined)
                 throw new MediaSettingsError(
                   "reference images are unavailable",
                 );
-              return host.destination.readReference(reference);
+              return host.destination.readReference(reference, model);
             },
           });
           const costMilliunits = estimate(settings, references);

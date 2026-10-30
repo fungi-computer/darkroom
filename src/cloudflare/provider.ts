@@ -6,6 +6,8 @@ import {
   estimateImageMilliunits,
   normalizeMediaProviderOutput,
   mediaProviderWireSchema,
+  validateMediaGenerationSettings,
+  type MediaModel,
   type MediaAiResult,
   type MediaGenerationSettings,
   type MediaProvider,
@@ -39,6 +41,26 @@ type ImageEstimateParams = {
   references?: readonly { width: number; height: number }[];
 };
 
+/** Quote the catalog defaults through the exact estimator used before dispatch. */
+export function estimateMediaModel(model: MediaModel) {
+  const settings = validateMediaGenerationSettings({
+    model: model.id,
+    prompt: "x",
+    width: model.input.defaultWidth,
+    height: model.input.defaultHeight,
+  });
+  return {
+    /** An indicative quote, not an admitted generation receipt. */
+    kind: "estimate" as const,
+    /** Provider cost before the host's billing policy. */
+    basis: "provider-cost" as const,
+    /** Catalog defaults, a one-character prompt and no references. */
+    settings,
+    /** Estimated provider milliunits of a cent for these exact settings. */
+    costMilliunits: estimate(settings, []),
+  };
+}
+
 /** Workers AI results vary by model; the provider decodes them at this boundary. */
 export type MediaAiPort = {
   /** Dispatch to the native Workers AI binding. */
@@ -69,7 +91,7 @@ export function estimate(
 }
 
 // Workers AI prefixes upstream error messages with its numeric internal code.
-// Parse only that bounded identifier; the remaining message is never logged.
+// Parse only that bounded identifier; printable prose is separately decoded.
 const providerFailureCode = z.lazy(() =>
   z
     .string()
@@ -79,9 +101,18 @@ const providerFailureCode = z.lazy(() =>
     .catch(null),
 );
 
+// Observed in a real Flux replay: HTTP 400/code 3030. Match the complete
+// bounded refusal, not 3030 itself; the code is not documented as transient.
+const outputFlaggedMessage = z
+  .string()
+  .regex(
+    /^(?:\d{4,5}: )?(?:AiError: ){0,3}Your output has been flagged\. Please choose another prompt \/ input image combination \([0-9a-f-]{36}\)$/u,
+  );
+
 // Recognize the refusal, not the generic Workers AI error number or prompt text.
 const safetyFilterMessage = z.lazy(() =>
   z.union([
+    outputFlaggedMessage,
     z
       .string()
       .regex(/(?:^|:\s)(?:AiError:\s)?Input prompt contains NSFW content\b/iu),
@@ -133,22 +164,37 @@ function routedOptions(
 
 /** Retain the original provider failure alongside its bounded code and category. */
 function providerFailure(model: string, cause: unknown): MediaExecutionError {
-  const provider: MediaProviderDiagnostic = {
-    category: decodeMediaProviderErrorCategory(
-      cause instanceof Error ? cause.name : undefined,
-    ),
-    code: providerFailureCode.parse(
-      cause instanceof Error ? cause.message : undefined,
-    ),
-  };
-  // Workers correlates this structured event with the request trace. Never log
-  // the provider message/body: either can contain customer prompt content.
+  const category = decodeMediaProviderErrorCategory(
+    cause instanceof Error ? cause.name : undefined,
+  );
+  const code = providerFailureCode.parse(
+    cause instanceof Error ? cause.message : undefined,
+  );
+  // Observed 2026-10-27 in a real GPT Image 2 call from the Prints UI:
+  // "AiGatewayError: 2021: Insufficient AI Gateway credits" (no charge).
+  // Sources: ~/Botanical-cto/receipts/prints-e2e/REPORT.md:51 ("Follow-up 2")
+  // and ~/Botanical-cto/receipts/prints-e2e/gwfix/results.json (02:01 local;
+  // call at 2026-10-27T01:01:04.296Z). The error had only name and message;
+  // no HTTP status was recorded. This is observed wording, not a general
+  // Cloudflare code guarantee. Keep numeric classification at this owner.
+  const provider: MediaProviderDiagnostic =
+    code === 2021
+      ? { category, code, reason: "credits_exhausted" }
+      : { category, code };
+  const safeMessage = outputFlaggedMessage.safeParse(
+    cause instanceof Error ? cause.message : undefined,
+  );
+  // The maintained Workers AI errors expose name/message, not a Response or
+  // cause chain. Only the complete, bounded refusal grammar above is safe to
+  // print. Unmodeled upstream prose/bodies can echo private request content;
+  // retain the original error (including any nested details) only as redacted.
   console.error(
     "Media provider request failed",
     {
       model,
       providerCode: provider.code,
       category: provider.category,
+      providerMessage: safeMessage.success ? safeMessage.data : undefined,
     },
     Redacted.make(cause),
   );
@@ -239,9 +285,8 @@ export async function generate(
   } catch (cause) {
     throw new MediaExecutionError("normalization", { cause });
   }
-  let providerValue: MediaAiResult;
-  try {
-    providerValue = await ai.run(
+  const invoke = async (): Promise<MediaAiResult> => {
+    return ai.run(
       settings.model,
       workersAiInput(providerInput),
       routedOptions(options, signal, {
@@ -249,8 +294,28 @@ export async function generate(
         images: references.length,
       }),
     );
+  };
+  let providerValue: MediaAiResult;
+  try {
+    providerValue = await invoke();
   } catch (cause) {
-    throw providerFailure(settings.model, cause);
+    // Only 3040 is documented as capacity temporarily exceeded:
+    // https://developers.cloudflare.com/workers-ai/platform/errors/
+    // One product-call retry, never a test retry. Rebuild the multipart body
+    // inside invoke: a failed binding call may already have consumed it.
+    if (
+      providerFailureCode.parse(
+        cause instanceof Error ? cause.message : undefined,
+      ) !== 3040 ||
+      signal?.aborted
+    )
+      throw providerFailure(settings.model, cause);
+    try {
+      providerValue = await invoke();
+    } catch (cause) {
+      // One terminal diagnostic for the product call, not one per attempt.
+      throw providerFailure(settings.model, cause);
+    }
   }
   try {
     return await normalizeMediaProviderOutput(

@@ -554,9 +554,9 @@ Start the native resize and encode chain.
 
 ###### Returns
 
-| Name          | Type                    | Description                            |
-| ------------- | ----------------------- | -------------------------------------- |
-| `transform()` | (`options`) => `object` | Apply the native scale-down transform. |
+| Name          | Type                    | Description                                |
+| ------------- | ----------------------- | ------------------------------------------ |
+| `transform()` | (`options`) => `object` | Apply the native aspect-preserving resize. |
 
 ---
 
@@ -602,9 +602,9 @@ AI Gateway route.
 function createImagesReferenceFitter(images): ReferenceImageFitter;
 ```
 
-Media's reference preparation on the Images binding: decode the real bytes,
-scale an oversized image down to MAX_REFERENCE_DIMENSION as PNG, then decode the
-output so its metadata describes the bytes actually sent.
+Media's reference preparation on the Images binding: decode the real bytes, fit
+the selected model's reference size as PNG, then decode the output so its
+metadata describes the bytes actually sent.
 
 #### Parameters
 

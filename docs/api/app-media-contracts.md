@@ -10,10 +10,202 @@
 
 ## Variables
 
+### mediaModelPriceEstimateSchema
+
+```ts
+const mediaModelPriceEstimateSchema: ZodObject<{
+  kind: ZodLiteral<"estimate">;
+  basis: ZodEnum<{
+     provider-cost: "provider-cost";
+     team-price: "team-price";
+  }>;
+  costMilliunits: ZodNumber;
+  settings: ZodObject<{
+     model: ZodString;
+     prompt: ZodString;
+     width: ZodNumber;
+     height: ZodNumber;
+     steps: ZodOptional<ZodNumber>;
+     durationSeconds: ZodOptional<ZodNumber>;
+     resolution: ZodOptional<ZodEnum<{
+        p480: "480p";
+        p720: "720p";
+        p768: "768p";
+        p1080: "1080p";
+        p4k: "4k";
+     }>>;
+     aspectRatio: ZodOptional<ZodEnum<{
+        wide: "16:9";
+        landscape: "4:3";
+        square: "1:1";
+        portrait: "3:4";
+        tall: "9:16";
+        ultrawide: "21:9";
+        ultratall: "9:21";
+     }>>;
+     generateAudio: ZodOptional<ZodBoolean>;
+     references: ZodOptional<ZodArray<ZodObject<{
+        computerId: ZodString;
+        path: ZodString;
+        role: ZodOptional<ZodEnum<{
+           first: ...;
+           last: ...;
+           reference: ...;
+        }>>;
+     }, $strict>>>;
+  }, $strict>;
+}, $strict>;
+```
+
+A labelled estimate for one explicitly described generation, never a receipt.
+
+---
+
+### mediaCatalogModelSchema
+
+```ts
+const mediaCatalogModelSchema: ZodReadonly<ZodObject<{
+  priceEstimate: ZodOptional<ZodObject<{
+     kind: ZodLiteral<"estimate">;
+     basis: ZodEnum<{
+        provider-cost: "provider-cost";
+        team-price: "team-price";
+     }>;
+     costMilliunits: ZodNumber;
+     settings: ZodObject<{
+        model: ZodString;
+        prompt: ZodString;
+        width: ZodNumber;
+        height: ZodNumber;
+        steps: ZodOptional<ZodNumber>;
+        durationSeconds: ZodOptional<ZodNumber>;
+        resolution: ZodOptional<ZodEnum<{
+           p480: ...;
+           p720: ...;
+           p768: ...;
+           p1080: ...;
+           p4k: ...;
+        }>>;
+        aspectRatio: ZodOptional<ZodEnum<{
+           wide: ...;
+           landscape: ...;
+           square: ...;
+           portrait: ...;
+           tall: ...;
+           ultrawide: ...;
+           ultratall: ...;
+        }>>;
+        generateAudio: ZodOptional<ZodBoolean>;
+        references: ZodOptional<ZodArray<ZodObject<..., ...>>>;
+     }, $strict>;
+  }, $strict>>;
+  id: ZodString;
+  label: ZodString;
+  kind: ZodEnum<{
+     image: "image";
+     video: "video";
+  }>;
+  tier: ZodEnum<{
+     draft: "draft";
+     balanced: "balanced";
+     premium: "premium";
+     max: "max";
+  }>;
+  outputFormats: ZodReadonly<ZodArray<ZodEnum<{
+     png: "png";
+     jpeg: "jpeg";
+     webp: "webp";
+  }>>>;
+  maxPromptLength: ZodNumber;
+  input: ZodLazy<ZodReadonly<ZodObject<{
+     transport: ZodEnum<{
+        json: "json";
+        multipart: "multipart";
+     }>;
+     dimensions: ZodEnum<{
+        none: "none";
+        own: "own";
+     }>;
+     maxDimension: ZodNullable<ZodNumber>;
+     maxDimensionDocumented: ZodBoolean;
+     defaultWidth: ZodNumber;
+     defaultHeight: ZodNumber;
+     steps: ZodEnum<{
+        steps: "steps";
+        num_steps: "num_steps";
+        fixed: "fixed";
+     }>;
+     maxSteps: ZodNullable<ZodNumber>;
+     defaultSteps: ZodNullable<ZodNumber>;
+     referenceField: ZodNullable<ZodString>;
+     maxReferences: ZodNumber;
+  }, $strict>>>;
+  sizes: ZodNullable<ZodReadonly<ZodArray<ZodString>>>;
+  video: ZodNullable<ZodLazy<ZodReadonly<ZodObject<{
+     minSeconds: ZodNumber;
+     maxSeconds: ZodNumber;
+     defaultSeconds: ZodNumber;
+     durations: ZodReadonly<ZodArray<ZodNumber>>;
+     provider: ZodEnum<{
+        seedance: "seedance";
+        veo: "veo";
+        minimax: "minimax";
+     }>;
+     formats: ZodReadonly<ZodArray<ZodLazy<...>>>;
+     defaultResolution: ZodEnum<{
+        p480: "480p";
+        p720: "720p";
+        p768: "768p";
+        p1080: "1080p";
+        p4k: "4k";
+     }>;
+     defaultAspectRatio: ZodEnum<{
+        wide: "16:9";
+        landscape: "4:3";
+        square: "1:1";
+        portrait: "3:4";
+        tall: "9:16";
+        ultrawide: "21:9";
+        ultratall: "9:21";
+     }>;
+     supportsAudio: ZodBoolean;
+     defaultGenerateAudio: ZodNullable<ZodBoolean>;
+     referenceRoles: ZodReadonly<ZodArray<ZodEnum<...>>>;
+     maxReferenceImages: ZodNumber;
+     referenceResolutions: ZodReadonly<ZodArray<ZodEnum<...>>>;
+     prices: ZodReadonly<ZodArray<ZodReadonly<...>>>;
+  }, $strict>>>>;
+}, $strict>>;
+```
+
+Host catalog projection; provider metadata remains owned by the sole catalog.
+
+---
+
 ### mediaModelsSchema
 
 ```ts
 const mediaModelsSchema: ZodLazy<ZodArray<ZodReadonly<ZodObject<{
+  priceEstimate: ZodOptional<ZodObject<{
+     kind: ZodLiteral<"estimate">;
+     basis: ZodEnum<{
+        provider-cost: "provider-cost";
+        team-price: "team-price";
+     }>;
+     costMilliunits: ZodNumber;
+     settings: ZodObject<{
+        model: ZodString;
+        prompt: ZodString;
+        width: ZodNumber;
+        height: ZodNumber;
+        steps: ZodOptional<...>;
+        durationSeconds: ZodOptional<...>;
+        resolution: ZodOptional<...>;
+        aspectRatio: ZodOptional<...>;
+        generateAudio: ZodOptional<...>;
+        references: ZodOptional<...>;
+     }, $strict>;
+  }, $strict>>;
   id: ZodString;
   label: ZodString;
   kind: ZodEnum<{
@@ -42,6 +234,7 @@ const mediaModelsSchema: ZodLazy<ZodArray<ZodReadonly<ZodObject<{
         own: ...;
      }>;
      maxDimension: ZodNullable<ZodNumber>;
+     maxDimensionDocumented: ZodBoolean;
      defaultWidth: ZodNumber;
      defaultHeight: ZodNumber;
      steps: ZodEnum<{
@@ -64,6 +257,7 @@ const mediaModelsSchema: ZodLazy<ZodArray<ZodReadonly<ZodObject<{
      formats: ZodReadonly<...>;
      defaultResolution: ZodEnum<...>;
      defaultAspectRatio: ZodEnum<...>;
+     supportsAudio: ZodBoolean;
      defaultGenerateAudio: ZodNullable<...>;
      referenceRoles: ZodReadonly<...>;
      maxReferenceImages: ZodNumber;
@@ -248,6 +442,8 @@ const appMediaBrokerFailureSchema: ZodObject<{
      INSUFFICIENT_CREDIT: "INSUFFICIENT_CREDIT";
      HOST_FAILURE: "HOST_FAILURE";
      INVALID_ARGUMENT: "INVALID_ARGUMENT";
+     MEDIA_PROVIDER_FAILURE: "MEDIA_PROVIDER_FAILURE";
+     MEDIA_PROVIDER_FAILURE_UNCHARGED: "MEDIA_PROVIDER_FAILURE_UNCHARGED";
      SAFETY_FILTER_REFUSED: "SAFETY_FILTER_REFUSED";
   }>;
   message: ZodString;
@@ -265,20 +461,7 @@ const appMediaBrokerFailureSchema: ZodObject<{
      destination-write: "destination-write";
   }>;
   retryable: ZodBoolean;
-  provider: ZodOptional<ZodPipe<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodTransform<
-     | Readonly<{
-     category:   | "InferenceUpstreamError"
-        | "AiInternalError"
-        | "TypeError"
-        | "AbortError"
-        | "TimeoutError"
-        | "Error";
-     code: number | null;
-   }>
-     | Readonly<{
-     category: "result_download";
-     status: number;
-  }>, unknown>>>;
+  provider: ZodOptional<ZodType<MediaProviderDiagnostic, unknown, $ZodTypeInternals<MediaProviderDiagnostic, unknown>>>;
 }, $strict>;
 ```
 
@@ -312,6 +495,8 @@ const appMediaRefusalSchema: ZodUnion<readonly [ZodObject<{
      INSUFFICIENT_CREDIT: "INSUFFICIENT_CREDIT";
      HOST_FAILURE: "HOST_FAILURE";
      INVALID_ARGUMENT: "INVALID_ARGUMENT";
+     MEDIA_PROVIDER_FAILURE: "MEDIA_PROVIDER_FAILURE";
+     MEDIA_PROVIDER_FAILURE_UNCHARGED: "MEDIA_PROVIDER_FAILURE_UNCHARGED";
      SAFETY_FILTER_REFUSED: "SAFETY_FILTER_REFUSED";
   }>;
   message: ZodString;
@@ -329,15 +514,7 @@ const appMediaRefusalSchema: ZodUnion<readonly [ZodObject<{
      destination-write: "destination-write";
   }>;
   retryable: ZodBoolean;
-  provider: ZodOptional<ZodPipe<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodTransform<
-     | Readonly<{
-     category: ... | ... | ... | ... | ... | ...;
-     code: ... | ...;
-   }>
-     | Readonly<{
-     category: "result_download";
-     status: number;
-  }>, unknown>>>;
+  provider: ZodOptional<ZodType<MediaProviderDiagnostic, unknown, $ZodTypeInternals<MediaProviderDiagnostic, unknown>>>;
 }, $strict>]>;
 ```
 
@@ -350,6 +527,12 @@ errors.
 
 ```ts
 const appMediaModelsOutcomeSchema: ZodUnion<readonly [ZodLazy<ZodArray<ZodReadonly<ZodObject<{
+  priceEstimate: ZodOptional<ZodObject<{
+     kind: ZodLiteral<...>;
+     basis: ZodEnum<...>;
+     costMilliunits: ZodNumber;
+     settings: ZodObject<..., ...>;
+  }, $strict>>;
   id: ZodString;
   label: ZodString;
   kind: ZodEnum<{
@@ -372,6 +555,7 @@ const appMediaModelsOutcomeSchema: ZodUnion<readonly [ZodLazy<ZodArray<ZodReadon
      transport: ...;
      dimensions: ...;
      maxDimension: ...;
+     maxDimensionDocumented: ...;
      defaultWidth: ...;
      defaultHeight: ...;
      steps: ...;
@@ -404,6 +588,8 @@ const appMediaModelsOutcomeSchema: ZodUnion<readonly [ZodLazy<ZodArray<ZodReadon
      INSUFFICIENT_CREDIT: "INSUFFICIENT_CREDIT";
      HOST_FAILURE: "HOST_FAILURE";
      INVALID_ARGUMENT: "INVALID_ARGUMENT";
+     MEDIA_PROVIDER_FAILURE: "MEDIA_PROVIDER_FAILURE";
+     MEDIA_PROVIDER_FAILURE_UNCHARGED: "MEDIA_PROVIDER_FAILURE_UNCHARGED";
      SAFETY_FILTER_REFUSED: "SAFETY_FILTER_REFUSED";
   }>;
   message: ZodString;
@@ -421,7 +607,7 @@ const appMediaModelsOutcomeSchema: ZodUnion<readonly [ZodLazy<ZodArray<ZodReadon
      destination-write: "destination-write";
   }>;
   retryable: ZodBoolean;
-  provider: ZodOptional<ZodPipe<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodTransform<Readonly<...> | Readonly<...>, unknown>>>;
+  provider: ZodOptional<ZodType<MediaProviderDiagnostic, unknown, $ZodTypeInternals<MediaProviderDiagnostic, unknown>>>;
 }, $strict>]>]>;
 ```
 
@@ -474,6 +660,8 @@ const appMediaGenerationOutcomeSchema: ZodUnion<readonly [ZodObject<{
      INSUFFICIENT_CREDIT: "INSUFFICIENT_CREDIT";
      HOST_FAILURE: "HOST_FAILURE";
      INVALID_ARGUMENT: "INVALID_ARGUMENT";
+     MEDIA_PROVIDER_FAILURE: "MEDIA_PROVIDER_FAILURE";
+     MEDIA_PROVIDER_FAILURE_UNCHARGED: "MEDIA_PROVIDER_FAILURE_UNCHARGED";
      SAFETY_FILTER_REFUSED: "SAFETY_FILTER_REFUSED";
   }>;
   message: ZodString;
@@ -491,7 +679,7 @@ const appMediaGenerationOutcomeSchema: ZodUnion<readonly [ZodObject<{
      destination-write: "destination-write";
   }>;
   retryable: ZodBoolean;
-  provider: ZodOptional<ZodPipe<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodTransform<Readonly<...> | Readonly<...>, unknown>>>;
+  provider: ZodOptional<ZodType<MediaProviderDiagnostic, unknown, $ZodTypeInternals<MediaProviderDiagnostic, unknown>>>;
 }, $strict>]>]>;
 ```
 

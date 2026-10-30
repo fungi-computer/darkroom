@@ -237,23 +237,24 @@ out. Hosts may bind it to Workers AI or their own transport.
 type FittedReferenceImage = Omit<MediaReferenceBytes, "filename">;
 ```
 
-A decoded reference image, scaled within MAX_REFERENCE_DIMENSION.
+A decoded reference image, fitted for the selected model.
 
 ---
 
 ### ReferenceImageFitter
 
 ```ts
-type ReferenceImageFitter = (bytes) => Promise<FittedReferenceImage>;
+type ReferenceImageFitter = (bytes, model) => Promise<FittedReferenceImage>;
 ```
 
-Decode one reference image and scale it within Media's dimension bound.
+Decode and fit a reference: image long edge ≤512, video short edge ≥320.
 
 #### Parameters
 
 | Parameter | Type         |
 | --------- | ------------ |
 | `bytes`   | `Uint8Array` |
+| `model`   | `string`     |
 
 #### Returns
 
@@ -352,7 +353,7 @@ hydration.
 
 ```ts
 type MediaReferenceReader = Readonly<{
-  read: (reference) => Promise<MediaReferenceBytes>;
+  read: (reference, model) => Promise<MediaReferenceBytes>;
 }>;
 ```
 
@@ -635,26 +636,6 @@ Decode a viewer long-edge size within the supported pixel bounds.
 
 ---
 
-### MAX\_REFERENCE\_COUNT
-
-```ts
-const MAX_REFERENCE_COUNT: 4 = 4;
-```
-
-Maximum reference files in one generation request.
-
----
-
-### MAX\_REFERENCE\_DIMENSION
-
-```ts
-const MAX_REFERENCE_DIMENSION: 512 = 512;
-```
-
-Maximum reference width and height sent to inference, in pixels.
-
----
-
 ### MAX\_REFERENCE\_BYTES
 
 ```ts
@@ -770,6 +751,7 @@ const mediaGenerationSelectionSchema: ZodObject<
       ZodArray<
         ZodObject<
           {
+            computerId: ZodOptional<ZodString>;
             path: ZodString;
             role: ZodOptional<
               ZodEnum<{
@@ -788,7 +770,7 @@ const mediaGenerationSelectionSchema: ZodObject<
 >;
 ```
 
-App selections contain paths; the host supplies the admitted Computer.
+A reference may select another Computer; identity never grants access.
 
 ---
 
@@ -942,6 +924,7 @@ const mediaModelInputSchema: ZodLazy<
           own: "own";
         }>;
         maxDimension: ZodNullable<ZodNumber>;
+        maxDimensionDocumented: ZodBoolean;
         defaultWidth: ZodNumber;
         defaultHeight: ZodNumber;
         steps: ZodEnum<{
@@ -961,6 +944,17 @@ const mediaModelInputSchema: ZodLazy<
 ```
 
 Media's provider catalog: Workers AI images plus gateway image and video models.
+
+---
+
+### MAX\_REFERENCE\_COUNT
+
+```ts
+const MAX_REFERENCE_COUNT: 16 = 16;
+```
+
+Schema ceiling for reference lists: the largest per-model limit. Each model's
+own `maxReferences` / `maxReferenceImages` is enforced after parsing.
 
 ---
 
@@ -1100,6 +1094,7 @@ const mediaVideoSchema: ZodLazy<ZodReadonly<ZodObject<{
      ultrawide: "21:9";
      ultratall: "9:21";
   }>;
+  supportsAudio: ZodBoolean;
   defaultGenerateAudio: ZodNullable<ZodBoolean>;
   referenceRoles: ZodReadonly<ZodArray<ZodEnum<{
      first: "first-frame";
@@ -1175,6 +1170,7 @@ const mediaModelSchema: ZodReadonly<ZodObject<{
         own: "own";
      }>;
      maxDimension: ZodNullable<ZodNumber>;
+     maxDimensionDocumented: ZodBoolean;
      defaultWidth: ZodNumber;
      defaultHeight: ZodNumber;
      steps: ZodEnum<{
@@ -1215,6 +1211,7 @@ const mediaModelSchema: ZodReadonly<ZodObject<{
         ultrawide: "21:9";
         ultratall: "9:21";
      }>;
+     supportsAudio: ZodBoolean;
      defaultGenerateAudio: ZodNullable<ZodBoolean>;
      referenceRoles: ZodReadonly<ZodArray<ZodEnum<...>>>;
      maxReferenceImages: ZodNumber;
@@ -1245,6 +1242,16 @@ const USD_PER_1K_NEURONS: 0.011 = 0.011;
 ```
 
 Published Workers AI image rate: $0.011 per 1,000 neurons.
+
+---
+
+### MAX\_REFERENCE\_DIMENSION
+
+```ts
+const MAX_REFERENCE_DIMENSION: 512 = 512;
+```
+
+Maximum long edge for image-model references, in pixels.
 
 ## Functions
 
@@ -1328,7 +1335,7 @@ function validateMediaGenerationSelection(
 ): Readonly<Omit<MediaGenerationSettings, "references"> & object>;
 ```
 
-Validate path-only selections without inventing a Computer identity.
+Validate selections without granting Computer authority.
 
 #### Parameters
 
@@ -1546,6 +1553,7 @@ function listMediaModels(): readonly Readonly<{
     transport: "json" | "multipart";
     dimensions: "none" | "own";
     maxDimension: number | null;
+    maxDimensionDocumented: boolean;
     defaultWidth: number;
     defaultHeight: number;
     steps: "steps" | "num_steps" | "fixed";
@@ -1570,6 +1578,7 @@ function listMediaModels(): readonly Readonly<{
     defaultResolution: "480p" | "720p" | "768p" | "1080p" | "4k";
     defaultAspectRatio:
       "16:9" | "4:3" | "1:1" | "3:4" | "9:16" | "21:9" | "9:21";
+    supportsAudio: boolean;
     defaultGenerateAudio: boolean | null;
     referenceRoles: readonly ("first-frame" | "last-frame" | "reference")[];
     maxReferenceImages: number;
@@ -1594,23 +1603,24 @@ readonly `Readonly`\<\{ `id`: `string`; `label`: `string`; `kind`: `"image"` \|
 `outputFormats`: readonly (`"png"` \| `"jpeg"` \| `"webp"`)[];
 `maxPromptLength`: `number`; `input`: `Readonly`\<\{ `transport`: `"json"` \|
 `"multipart"`; `dimensions`: `"none"` \| `"own"`; `maxDimension`: `number` \|
-`null`; `defaultWidth`: `number`; `defaultHeight`: `number`; `steps`: `"steps"`
-\| `"num_steps"` \| `"fixed"`; `maxSteps`: `number` \| `null`; `defaultSteps`:
-`number` \| `null`; `referenceField`: `string` \| `null`; `maxReferences`:
-`number`; \}\>; `sizes`: readonly `string`[] \| `null`; `video`: \|
-`Readonly`\<\{ `minSeconds`: `number`; `maxSeconds`: `number`; `defaultSeconds`:
-`number`; `durations`: readonly `number`[]; `provider`: `"seedance"` \| `"veo"`
-\| `"minimax"`; `formats`: readonly `Readonly`\<\{ `resolution`: `"480p"` \|
-`"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio`: `"16:9"` \| `"4:3"`
-\| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `width`: `number`;
-`height`: `number`; \}\>[]; `defaultResolution`: `"480p"` \| `"720p"` \|
-`"768p"` \| `"1080p"` \| `"4k"`; `defaultAspectRatio`: `"16:9"` \| `"4:3"` \|
-`"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `defaultGenerateAudio`:
-`boolean` \| `null`; `referenceRoles`: readonly (`"first-frame"` \|
-`"last-frame"` \| `"reference"`)[]; `maxReferenceImages`: `number`;
-`referenceResolutions`: readonly (`"480p"` \| `"720p"` \| `"768p"` \| `"1080p"`
-\| `"4k"`)[]; `prices`: readonly `Readonly`\<\{ `resolution`: `"480p"` \|
-`"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `silentMilliunitsPerSecond`:
+`null`; `maxDimensionDocumented`: `boolean`; `defaultWidth`: `number`;
+`defaultHeight`: `number`; `steps`: `"steps"` \| `"num_steps"` \| `"fixed"`;
+`maxSteps`: `number` \| `null`; `defaultSteps`: `number` \| `null`;
+`referenceField`: `string` \| `null`; `maxReferences`: `number`; \}\>; `sizes`:
+readonly `string`[] \| `null`; `video`: \| `Readonly`\<\{ `minSeconds`:
+`number`; `maxSeconds`: `number`; `defaultSeconds`: `number`; `durations`:
+readonly `number`[]; `provider`: `"seedance"` \| `"veo"` \| `"minimax"`;
+`formats`: readonly `Readonly`\<\{ `resolution`: `"480p"` \| `"720p"` \|
+`"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio`: `"16:9"` \| `"4:3"` \| `"1:1"`
+\| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `width`: `number`; `height`:
+`number`; \}\>[]; `defaultResolution`: `"480p"` \| `"720p"` \| `"768p"` \|
+`"1080p"` \| `"4k"`; `defaultAspectRatio`: `"16:9"` \| `"4:3"` \| `"1:1"` \|
+`"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `supportsAudio`: `boolean`;
+`defaultGenerateAudio`: `boolean` \| `null`; `referenceRoles`: readonly
+(`"first-frame"` \| `"last-frame"` \| `"reference"`)[]; `maxReferenceImages`:
+`number`; `referenceResolutions`: readonly (`"480p"` \| `"720p"` \| `"768p"` \|
+`"1080p"` \| `"4k"`)[]; `prices`: readonly `Readonly`\<\{ `resolution`: `"480p"`
+\| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `silentMilliunitsPerSecond`:
 `number`; `audioMilliunitsPerSecond`: `number`; \}\>[]; \}\> \| `null`; \}\>[]
 
 ---
@@ -1630,6 +1640,7 @@ function getMediaModel(id):
         transport: "json" | "multipart";
         dimensions: "none" | "own";
         maxDimension: number | null;
+        maxDimensionDocumented: boolean;
         defaultWidth: number;
         defaultHeight: number;
         steps: "steps" | "num_steps" | "fixed";
@@ -1655,6 +1666,7 @@ function getMediaModel(id):
         defaultResolution: "480p" | "720p" | "768p" | "1080p" | "4k";
         defaultAspectRatio:
           "16:9" | "4:3" | "1:1" | "3:4" | "9:16" | "21:9" | "9:21";
+        supportsAudio: boolean;
         defaultGenerateAudio: boolean | null;
         referenceRoles: readonly ("first-frame" | "last-frame" | "reference")[];
         maxReferenceImages: number;
@@ -1686,23 +1698,24 @@ Find a model by provider identifier, returning undefined when it is absent.
 `outputFormats`: readonly (`"png"` \| `"jpeg"` \| `"webp"`)[];
 `maxPromptLength`: `number`; `input`: `Readonly`\<\{ `transport`: `"json"` \|
 `"multipart"`; `dimensions`: `"none"` \| `"own"`; `maxDimension`: `number` \|
-`null`; `defaultWidth`: `number`; `defaultHeight`: `number`; `steps`: `"steps"`
-\| `"num_steps"` \| `"fixed"`; `maxSteps`: `number` \| `null`; `defaultSteps`:
-`number` \| `null`; `referenceField`: `string` \| `null`; `maxReferences`:
-`number`; \}\>; `sizes`: readonly `string`[] \| `null`; `video`: \|
-`Readonly`\<\{ `minSeconds`: `number`; `maxSeconds`: `number`; `defaultSeconds`:
-`number`; `durations`: readonly `number`[]; `provider`: `"seedance"` \| `"veo"`
-\| `"minimax"`; `formats`: readonly `Readonly`\<\{ `resolution`: `"480p"` \|
-`"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio`: `"16:9"` \| `"4:3"`
-\| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `width`: `number`;
-`height`: `number`; \}\>[]; `defaultResolution`: `"480p"` \| `"720p"` \|
-`"768p"` \| `"1080p"` \| `"4k"`; `defaultAspectRatio`: `"16:9"` \| `"4:3"` \|
-`"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `defaultGenerateAudio`:
-`boolean` \| `null`; `referenceRoles`: readonly (`"first-frame"` \|
-`"last-frame"` \| `"reference"`)[]; `maxReferenceImages`: `number`;
-`referenceResolutions`: readonly (`"480p"` \| `"720p"` \| `"768p"` \| `"1080p"`
-\| `"4k"`)[]; `prices`: readonly `Readonly`\<\{ `resolution`: `"480p"` \|
-`"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `silentMilliunitsPerSecond`:
+`null`; `maxDimensionDocumented`: `boolean`; `defaultWidth`: `number`;
+`defaultHeight`: `number`; `steps`: `"steps"` \| `"num_steps"` \| `"fixed"`;
+`maxSteps`: `number` \| `null`; `defaultSteps`: `number` \| `null`;
+`referenceField`: `string` \| `null`; `maxReferences`: `number`; \}\>; `sizes`:
+readonly `string`[] \| `null`; `video`: \| `Readonly`\<\{ `minSeconds`:
+`number`; `maxSeconds`: `number`; `defaultSeconds`: `number`; `durations`:
+readonly `number`[]; `provider`: `"seedance"` \| `"veo"` \| `"minimax"`;
+`formats`: readonly `Readonly`\<\{ `resolution`: `"480p"` \| `"720p"` \|
+`"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio`: `"16:9"` \| `"4:3"` \| `"1:1"`
+\| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `width`: `number`; `height`:
+`number`; \}\>[]; `defaultResolution`: `"480p"` \| `"720p"` \| `"768p"` \|
+`"1080p"` \| `"4k"`; `defaultAspectRatio`: `"16:9"` \| `"4:3"` \| `"1:1"` \|
+`"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `supportsAudio`: `boolean`;
+`defaultGenerateAudio`: `boolean` \| `null`; `referenceRoles`: readonly
+(`"first-frame"` \| `"last-frame"` \| `"reference"`)[]; `maxReferenceImages`:
+`number`; `referenceResolutions`: readonly (`"480p"` \| `"720p"` \| `"768p"` \|
+`"1080p"` \| `"4k"`)[]; `prices`: readonly `Readonly`\<\{ `resolution`: `"480p"`
+\| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `silentMilliunitsPerSecond`:
 `number`; `audioMilliunitsPerSecond`: `number`; \}\>[]; \}\> \| `null`; \}\> \|
 `undefined`
 

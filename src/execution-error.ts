@@ -40,12 +40,16 @@ export type MediaFailureStage = Exclude<
 export type MediaExecutionErrorOptions = ErrorOptions & {
   /** Safe provider facts, when the failure came from provider transport. */
   readonly provider?: MediaProviderDiagnostic | undefined;
+  /** Confirmed zero-unit customer settlement, never an upstream billing claim. */
+  readonly customerCharge?: "none" | undefined;
 };
 
 /** A bounded stage marker for failures that cross the Media HTTP boundary. */
 export class MediaExecutionError extends Error {
   /** Safe provider facts only; the original cause remains private. */
   readonly provider: MediaProviderDiagnostic | undefined;
+  /** Unknown unless the execution owner confirmed zero-unit settlement. */
+  readonly customerCharge: "none" | "unknown";
 
   constructor(
     /** Execution stage where the failure occurred. */
@@ -54,6 +58,7 @@ export class MediaExecutionError extends Error {
   ) {
     super(`Media ${stage} failed`, options);
     this.name = "MediaExecutionError";
+    this.customerCharge = options?.customerCharge ?? "unknown";
     this.provider =
       options?.provider === undefined
         ? undefined

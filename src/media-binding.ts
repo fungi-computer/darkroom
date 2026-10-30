@@ -76,7 +76,7 @@ export const mediaBindingGenerationSchema = z.discriminatedUnion("kind", [
 export type MediaBindingGeneration = z.output<
   typeof mediaBindingGenerationSchema
 >;
-/** Maintained MEDIA method grammar; guest input carries no principal or Computer. */
+/** Maintained MEDIA grammar; reference selectors carry no Computer authority. */
 export const mediaBindingCallSchema = z.discriminatedUnion("operation", [
   z.strictObject({
     /** Read the model catalog without dispatching generation. */
@@ -144,7 +144,7 @@ export function parseMediaBindingCall(raw: z.core.util.JSONType):
 export type MediaBindingRequest = Readonly<{
   /** Host-selected output filename within the App's library folder. */
   path: string;
-  /** Validated selection with the host's Computer attached to references. */
+  /** Validated references with explicit Computer identities, authorized by the host. */
   settings: MediaGenerationSettings;
   /** Optional image encoding; video output remains MP4. */
   outputFormat?: z.output<typeof mediaRequestedImageFormatSchema>;
@@ -171,7 +171,13 @@ export function mediaBindingRequest(
   if (references !== undefined)
     attached = {
       ...settings,
-      references: references.map((reference) => ({ ...reference, computerId })),
+      references: references.map((reference) => ({
+        ...reference,
+        computerId:
+          "computerId" in reference
+            ? (reference.computerId ?? computerId)
+            : computerId,
+      })),
     };
   const request: MediaBindingRequest = {
     path: `${input.libraryPath}/prints-${input.requestId}.${format}`,

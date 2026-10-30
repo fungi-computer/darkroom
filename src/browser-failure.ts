@@ -31,6 +31,10 @@ export const mediaFailureSchema = z.strictObject({
     HOST_FAILURE: "HOST_FAILURE",
     /** The host refused the selected input. */
     INVALID_ARGUMENT: "INVALID_ARGUMENT",
+    /** The inference provider did not complete generation. */
+    MEDIA_PROVIDER_FAILURE: "MEDIA_PROVIDER_FAILURE",
+    /** The host confirmed zero-unit customer settlement after provider failure. */
+    MEDIA_PROVIDER_FAILURE_UNCHARGED: "MEDIA_PROVIDER_FAILURE_UNCHARGED",
     /** The model's safety filter refused generation. */
     SAFETY_FILTER_REFUSED: "SAFETY_FILTER_REFUSED",
   }),
@@ -43,11 +47,11 @@ export const mediaFailureSchema = z.strictObject({
 /** Sanitized Media failure carried from the authenticated host to Agar. */
 export type MediaFailure = z.output<typeof mediaFailureSchema>;
 
-const decodeJson = Schema.decodeUnknownOption(
-  Schema.fromJsonString(Schema.Json),
-);
-
 function parseMediaFailureJson(json: string): MediaFailure | null {
+  // Schema-only App consumers must not retain the browser's JSON decoder.
+  const decodeJson = Schema.decodeUnknownOption(
+    Schema.fromJsonString(Schema.Json),
+  );
   const parsed = mediaFailureSchema.safeParse(
     Option.getOrUndefined(decodeJson(json)),
   );

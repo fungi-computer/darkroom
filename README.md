@@ -162,12 +162,26 @@ representations and do not decode as these outcomes.
 
 Provider facts use Agar's canonical Media grammar: an allowlisted error category
 and bounded numeric code, or `result_download` and a native HTTP status. The
-durable owner retains those facts through interruption and replay, including
-safety refusals, without retaining the original error message or cause in the
-failure record. A terminal provider failure never redispatches the paid attempt.
-The fresh pre-release schema replaces the safety-only refusal table; old preview
-stores require an explicit host reset, not an automatic migration or dual
-reader.
+provider boundary classifies code `2021` as the optional, closed
+`provider.reason: "credits_exhausted"`. On 2026-10-27, a real GPT Image 2 call
+from the Prints UI returned
+`AiGatewayError: 2021: Insufficient AI Gateway credits`. The original evidence
+is `~/Botanical-cto/receipts/prints-e2e/REPORT.md:51` ("Follow-up 2"; no charge
+recorded at line 53) and
+`~/Botanical-cto/receipts/prints-e2e/gwfix/results.json` (02:01 local; GPT Image
+2 call at `2026-10-27T01:01:04.296Z`). The error object contained only
+`name: "AiGatewayError"` and `message: "2021: Insufficient AI Gateway credits"`;
+no HTTP status was recorded. This is observed provider wording from a real UI
+call, not a published guarantee that every Cloudflare `2021` means a zero
+balance. Apps consume the typed reason without interpreting provider numbers or
+public error prose, and should direct the owner to check AI Gateway credits and
+billing rather than infer the account balance. It is separate from the host's
+`INSUFFICIENT_CREDIT` Team billing refusal. The durable owner retains those
+facts through interruption and replay, including safety refusals, without
+retaining the original error message or cause in the failure record. A terminal
+provider failure never redispatches the paid attempt. The fresh pre-release
+schema replaces the safety-only refusal table; old preview stores require an
+explicit host reset, not an automatic migration or dual reader.
 
 See the [generated API](docs/api/README.md) for signatures and host ports. The
 Cloudflare entry needs the native Workers type declarations in a TypeScript
@@ -177,8 +191,8 @@ host. The other entries use ordinary platform web types.
 
 For Workers AI, use `createWorkersAiMediaProvider(env.AI)` from `cloudflare` and
 add an `AI` binding to your host. `createImagesReferenceFitter` prepares bounded
-reference images through an Images binding. Your host authorizes each reference
-read.
+reference images through an Images binding, using the selected catalog model
+passed to the fitter. Your host authorizes each reference read.
 
 `stripPrivateProvenance(bytes)` from `provenance` removes prompt and lineage
 metadata while preserving the AI marker, print ID and image encoding. It returns
@@ -187,9 +201,20 @@ bytes, MIME type and filename extension. The public XMP format uses
 
 ## Limits
 
-References are bounded to four files, 512 pixels per side and 8 MiB per image.
-Still-image output and public downloads are bounded to 32 MiB. Catalog models
-may impose tighter limits. Video output has its own 64 MiB provider bound.
+References are bounded to four files and 8 MiB per image. Image-model references
+keep a maximum 512-pixel long edge. Video-model frames and references preserve
+their aspect ratio and are fitted by the short edge to 320 pixels, growing
+smaller inputs when necessary; resolved video references must have a short edge
+of at least 320 pixels. Still-image output and public downloads are bounded to
+32 MiB. Catalog models may impose tighter limits. Video output has its own 64
+MiB provider bound.
+
+The 8 MiB reference budget also applies after transformation: extreme panoramas
+can still exceed the encoded-byte budget, even though video references have no
+512-pixel long-edge cap. Celld Hub reference fitting requires a
+[paired Hub and edge release](../../services/hub-edge/README.md#paired-hub-and-edge-release);
+the linked section includes the draft Fungi 0.7.1 release note and mixed-version
+failure window.
 
 Private-provenance export supports PNG, JPEG and WebP. GIF without XMP remains
 index-only. Signed, malformed and unsupported images return a typed refusal. The

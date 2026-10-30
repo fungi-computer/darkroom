@@ -21,16 +21,25 @@ const settings = {
 };
 
 describe("background video diagnostic contract", () => {
-  it.each(["dispatch", "download", "safety"])(
+  it.each(["dispatch", "download", "safety", "credits"])(
     "retains a %s diagnostic through alarm, restart and HTTP replay without redispatch",
     async (failureKind) => {
       const marker = "synthetic-private-background-video-details";
       const failure = new Error(
-        failureKind === "safety"
-          ? `3031: AiError: Input prompt contains NSFW content. ${marker}`
-          : `3031: ${marker}`,
+        failureKind === "credits"
+          ? `2021: AiError: insufficient credits ${marker}`
+          : failureKind === "safety"
+            ? `3031: AiError: Input prompt contains NSFW content. ${marker}`
+            : `3031: ${marker}`,
       );
-      failure.name = "InferenceUpstreamError";
+      failure.name =
+        failureKind === "credits" ? "Error" : "InferenceUpstreamError";
+      const diagnostic =
+        failureKind === "download"
+          ? { category: "result_download", status: 503 }
+          : failureKind === "credits"
+            ? { category: "Error", code: 2021, reason: "credits_exhausted" }
+            : { category: "InferenceUpstreamError", code: 3031 };
       let dispatches = 0;
       let downloads = 0;
       let writes = 0;
@@ -111,15 +120,13 @@ describe("background video diagnostic contract", () => {
         expect(writes).toBe(0);
         const body = await response.text();
         expect(body).not.toContain(marker);
-        await expect(
-          readMediaFailure(new Response(body, { status: response.status })),
-        ).resolves.toMatchObject({
+        const browserFailure = await readMediaFailure(
+          new Response(body, { status: response.status }),
+        );
+        expect(browserFailure).toMatchObject({
           stage: failureKind === "download" ? "normalization" : "provider",
-          provider:
-            failureKind !== "download"
-              ? { category: "InferenceUpstreamError", code: 3031 }
-              : { category: "result_download", status: 503 },
         });
+        expect(browserFailure?.provider).toEqual(diagnostic);
         const broker = await readMediaBindingReply(
           mediaBindingCallSchema.parse({
             operation: "generate",
@@ -140,13 +147,14 @@ describe("background video diagnostic contract", () => {
         );
         expect(broker).toMatchObject({
           error:
-            failureKind === "safety" ? "SAFETY_FILTER_REFUSED" : "HOST_FAILURE",
+            failureKind === "safety"
+              ? "SAFETY_FILTER_REFUSED"
+              : failureKind === "download"
+                ? "HOST_FAILURE"
+                : "MEDIA_PROVIDER_FAILURE",
           retryable: false,
-          provider:
-            failureKind === "download"
-              ? { category: "result_download", status: 503 }
-              : { category: "InferenceUpstreamError", code: 3031 },
         });
+        expect(broker).toHaveProperty("provider", diagnostic);
         expect(JSON.stringify(broker)).not.toContain(marker);
         const stored = test.storage.sql
           .exec(
