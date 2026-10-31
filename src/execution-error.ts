@@ -75,8 +75,7 @@ export class MediaSafetyFilterRefusal extends MediaExecutionError {
 }
 
 /** Why the host's billing owner refused to admit a new generation. */
-export type MediaBillingRefusalCode =
-  "insufficient_credits" | "daily_limit_reached" | "denied";
+export type MediaBillingRefusalCode = "insufficient_credits" | "denied";
 
 /** A definitive billing refusal before dispatch; nothing was generated or charged. */
 export class MediaBillingRefusal extends Error {

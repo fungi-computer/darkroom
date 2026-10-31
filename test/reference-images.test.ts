@@ -86,7 +86,6 @@ describe("Images reference fitting", () => {
         metering: { admit, settle: () => Promise.resolve() },
         refusalMessages: {
           insufficient_credits: "Refill",
-          daily_limit_reached: "Quota",
           denied: "Denied",
         },
         destination: {

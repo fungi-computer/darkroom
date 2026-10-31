@@ -113,9 +113,8 @@ save fails. An ambiguous provider execution is never silently dispatched again.
 
 Declare `metering: "unmetered"` when your host pays its provider directly. A
 metered host supplies idempotent `admit` and `settle` functions plus its own
-`refusalMessages` for insufficient credit, daily limits and denied spending.
-Quotes are estimates. Your metering owner decides the customer price and
-settlement.
+`refusalMessages` for insufficient credit and denied spending. Quotes are
+estimates. Your metering owner decides the customer price and settlement.
 
 A recognized provider safety refusal returns HTTP 400 with
 `code: "SAFETY_FILTER_REFUSED"`, `stage: "provider"`, and `retryable: false`.

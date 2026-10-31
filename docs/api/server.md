@@ -798,8 +798,7 @@ Private cause plus an independently decoded, safe provider diagnostic.
 ### MediaBillingRefusalCode
 
 ```ts
-type MediaBillingRefusalCode =
-  "insufficient_credits" | "daily_limit_reached" | "denied";
+type MediaBillingRefusalCode = "insufficient_credits" | "denied";
 ```
 
 Why the host's billing owner refused to admit a new generation.

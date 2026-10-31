@@ -1,5 +1,15 @@
 # @fungi.computer/darkroom
 
+## 0.4.1
+
+### Patch Changes
+
+- Changes since 0.4.0:
+
+  - fix(billing): remove cumulative caps on funded usage
+
+- @fungi.computer/agar@0.6.1
+
 ## 0.4.0
 
 ### Minor Changes

@@ -35,7 +35,6 @@ const request: MediaOperationRequest = {
 const generatedBytes = new Uint8Array([1, 2, 3]);
 const refusalMessages = {
   insufficient_credits: "Your studio balance needs a refill.",
-  daily_limit_reached: "Your studio is done for today.",
   denied: "Your studio does not allow this purchase.",
 };
 

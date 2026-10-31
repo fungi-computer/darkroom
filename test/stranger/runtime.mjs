@@ -243,7 +243,6 @@ try {
   assert.deepEqual(exported.bytes, image);
   for (const [reason, status] of [
     ["insufficient_credits", 402],
-    ["daily_limit_reached", 402],
     ["denied", 403],
   ]) {
     const metered = createMediaService({
@@ -256,7 +255,6 @@ try {
       },
       refusalMessages: {
         insufficient_credits: "Refill your studio balance.",
-        daily_limit_reached: "Studio quota reached.",
         denied: "Studio spending denied.",
       },
     });
@@ -266,7 +264,6 @@ try {
       (await response.json()).error,
       {
         insufficient_credits: "Refill your studio balance.",
-        daily_limit_reached: "Studio quota reached.",
         denied: "Studio spending denied.",
       }[reason],
     );

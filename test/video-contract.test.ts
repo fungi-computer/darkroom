@@ -482,7 +482,6 @@ describe("video refinements and provider prices", () => {
           metering: { admit, settle: () => Promise.resolve() },
           refusalMessages: {
             insufficient_credits: "refill",
-            daily_limit_reached: "quota",
             denied: "denied",
           },
           destination: {
