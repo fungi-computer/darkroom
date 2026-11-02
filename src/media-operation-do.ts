@@ -73,6 +73,12 @@ export class MediaOperationDO extends DurableObject<MediaOperationCloudflareEnvi
   ): ReturnType<MediaOperationOwner["read"]> {
     return this.owner.read(...input);
   }
+  /** {@inheritDoc MediaOperationOwner.readShare} */
+  readShare(
+    ...input: Parameters<MediaOperationOwner["readShare"]>
+  ): ReturnType<MediaOperationOwner["readShare"]> {
+    return this.owner.readShare(...input);
+  }
   /** {@inheritDoc MediaOperationOwner.preflightErasure} */
   preflightErasure(
     ...input: Parameters<MediaOperationOwner["preflightErasure"]>

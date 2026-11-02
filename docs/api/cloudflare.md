@@ -110,6 +110,43 @@ erasure.
 `string`; `bytes`: `number`; `format`: `string`; `costMilliunits`: `number`; \}
 \| `null`; `createdAt`: `number`; `updatedAt`: `number`; \}\> \| `null`
 
+##### readShare()
+
+```ts
+readShare(...input):
+  | Readonly<{
+  requestId: string;
+  actorUserId: string;
+  outputKey: string;
+  contentType: string;
+  bytes: number;
+  kind: "image" | "video";
+  prompt: string;
+  model: string;
+  width: number;
+  height: number;
+  durationSeconds: number | null;
+}>
+  | null;
+```
+
+A settled operation's retained output and recipe, for a host that lets its owner
+share it publicly. Null before success or for another namespace, so a share can
+never reach another Team's output. References are never included.
+
+###### Parameters
+
+| Parameter  | Type         | Description |
+| ---------- | ------------ | ----------- |
+| ...`input` | \[`string`\] | -           |
+
+###### Returns
+
+\| `Readonly`\<\{ `requestId`: `string`; `actorUserId`: `string`; `outputKey`:
+`string`; `contentType`: `string`; `bytes`: `number`; `kind`: `"image"` \|
+`"video"`; `prompt`: `string`; `model`: `string`; `width`: `number`; `height`:
+`number`; `durationSeconds`: `number` \| `null`; \}\> \| `null`
+
 ##### preflightErasure()
 
 ```ts
@@ -571,6 +608,28 @@ type MediaOperationCloudflareEnvironment = MediaOperationEnvironment &
 ```
 
 Retention storage and native background provider bindings for the operation DO.
+
+---
+
+### MediaShareSource
+
+```ts
+type MediaShareSource = Readonly<{
+  requestId: string;
+  actorUserId: string;
+  outputKey: string;
+  contentType: string;
+  bytes: number;
+  kind: "image" | "video";
+  prompt: string;
+  model: string;
+  width: number;
+  height: number;
+  durationSeconds: number | null;
+}>;
+```
+
+What a host needs to serve one shared output: never references or receipts.
 
 ## Functions
 

@@ -58,6 +58,8 @@
     "package/dist/provenance-xmp.js",
     "package/dist/provenance.d.ts",
     "package/dist/provenance.js",
+    "package/dist/reference-image-size.d.ts",
+    "package/dist/reference-image-size.js",
     "package/dist/server.d.ts",
     "package/dist/server.js",
     "package/dist/video-providers/index.d.ts",

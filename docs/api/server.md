@@ -207,6 +207,43 @@ erasure.
 `string`; `bytes`: `number`; `format`: `string`; `costMilliunits`: `number`; \}
 \| `null`; `createdAt`: `number`; `updatedAt`: `number`; \}\> \| `null`
 
+##### readShare()
+
+```ts
+readShare(namespace):
+  | Readonly<{
+  requestId: string;
+  actorUserId: string;
+  outputKey: string;
+  contentType: string;
+  bytes: number;
+  kind: "image" | "video";
+  prompt: string;
+  model: string;
+  width: number;
+  height: number;
+  durationSeconds: number | null;
+}>
+  | null;
+```
+
+A settled operation's retained output and recipe, for a host that lets its owner
+share it publicly. Null before success or for another namespace, so a share can
+never reach another Team's output. References are never included.
+
+###### Parameters
+
+| Parameter   | Type     |
+| ----------- | -------- |
+| `namespace` | `string` |
+
+###### Returns
+
+\| `Readonly`\<\{ `requestId`: `string`; `actorUserId`: `string`; `outputKey`:
+`string`; `contentType`: `string`; `bytes`: `number`; `kind`: `"image"` \|
+`"video"`; `prompt`: `string`; `model`: `string`; `width`: `number`; `height`:
+`number`; `durationSeconds`: `number` \| `null`; \}\> \| `null`
+
 ##### preflightErasure()
 
 ```ts

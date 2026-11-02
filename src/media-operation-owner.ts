@@ -202,6 +202,32 @@ export type MediaOperationProjection = Readonly<{
   updatedAt: number;
 }>;
 
+/** What a host needs to serve one shared output: never references or receipts. */
+export type MediaShareSource = Readonly<{
+  /** Retry identity of the generation; a Print's id. */
+  requestId: string;
+  /** The person whose request generated it. */
+  actorUserId: string;
+  /** Retained exact provider bytes in the host's artifacts bucket. */
+  outputKey: string;
+  /** Media type of the retained bytes. */
+  contentType: string;
+  /** Length of the retained bytes. */
+  bytes: number;
+  /** Whether the output is a still image or a video. */
+  kind: "image" | "video";
+  /** The generation prompt, as sent to the model. */
+  prompt: string;
+  /** Catalog model identifier. */
+  model: string;
+  /** Requested width in pixels. */
+  width: number;
+  /** Requested height in pixels. */
+  height: number;
+  /** Video length in whole seconds; null for an image. */
+  durationSeconds: number | null;
+}>;
+
 /** An admission or claim decision with a safe operation projection. */
 export type MediaOperationDecision = Readonly<{
   /** Admission or claim outcome. */
@@ -537,6 +563,35 @@ export class MediaOperationOwner {
   public read(): MediaOperationProjection | null {
     const record = this.readRecord();
     return record === null ? null : this.project(record);
+  }
+
+  /**
+   * A settled operation's retained output and recipe, for a host that lets
+   * its owner share it publicly. Null before success or for another namespace,
+   * so a share can never reach another Team's output. References are never
+   * included.
+   */
+  public readShare(namespace: string): MediaShareSource | null {
+    const record = this.readRecord();
+    if (
+      record?.namespace !== namespace ||
+      record.state !== "succeeded" ||
+      record.output === null
+    )
+      return null;
+    return Object.freeze({
+      requestId: record.requestId,
+      actorUserId: record.actorUserId,
+      outputKey: record.output.key,
+      contentType: outputMime(record.output.format),
+      bytes: record.output.bytes,
+      kind: record.output.format === "mp4" ? "video" : "image",
+      prompt: record.input.prompt,
+      model: record.input.model,
+      width: record.input.width,
+      height: record.input.height,
+      durationSeconds: record.input.durationSeconds ?? null,
+    });
   }
 
   /** Check host namespace, request identity and inactivity before erasure. */

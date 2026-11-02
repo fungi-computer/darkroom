@@ -1,5 +1,18 @@
 # @fungi.computer/darkroom
 
+## 0.5.0
+
+### Minor Changes
+
+- Changes since 0.4.1:
+
+  - feat(prints): share one Print with a public, read-only link
+
+### Patch Changes
+
+- Updated dependencies
+  - @fungi.computer/agar@0.7.0
+
 ## 0.4.1
 
 ### Patch Changes

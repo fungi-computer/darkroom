@@ -16,6 +16,7 @@ export {
 } from "./cloudflare/reference-images.js";
 
 export { MediaOperationOwner } from "./media-operation-owner.js";
+export type { MediaShareSource } from "./media-operation-owner.js";
 export type {
   MediaOperationContext,
   MediaOperationStorage,

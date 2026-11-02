@@ -606,6 +606,44 @@ describe("MediaOperationOwner internal durable owner", () => {
     test.close();
   });
 
+  it("hands its host a succeeded output and recipe to share, for its own namespace only", async () => {
+    const outputs = new Map<string, Uint8Array>();
+    const test = fixture(":memory:", outputs, undefined, "media:request-a");
+    try {
+      admit(test.owner);
+      expect(test.owner.readShare("team-a")).toBeNull();
+      const leaseId = await reachCharging(test.owner);
+      // Not shareable until settled.
+      expect(test.owner.readShare("team-a")).toBeNull();
+      test.owner.recordSucceeded(leaseId, {
+        generationId: "media:request-a",
+        bytes: 3,
+        format: "png",
+        costMilliunits: 125,
+      });
+      expect(test.owner.readShare("team-a")).toEqual({
+        requestId: "request-a",
+        actorUserId: "actor-a",
+        outputKey: "media-output/v1/media:request-a",
+        contentType: "image/png",
+        bytes: 3,
+        kind: "image",
+        prompt: "a quiet greenhouse",
+        model: "@cf/black-forest-labs/flux-2-klein-4b",
+        width: 1_024,
+        height: 768,
+        durationSeconds: null,
+      });
+      expect(outputs.get("media-output/v1/media:request-a")).toEqual(
+        generatedBytes,
+      );
+      // Another Team never learns it exists.
+      expect(test.owner.readShare("team-b")).toBeNull();
+    } finally {
+      test.close();
+    }
+  });
+
   it("can release only a safe pre-effect estimate", async () => {
     const test = fixture();
     admit(test.owner);
