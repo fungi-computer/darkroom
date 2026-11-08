@@ -1,0 +1,19 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "docs": {
+      "dependsOn": ["^build", "build", "@fungi.computer/shiitake#build"],
+      "outputs": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/packages/shiitake/test/fixtures/**",
+        "$TURBO_ROOT$/tooling/docs/**",
+        "$TURBO_ROOT$/tooling/repository/src/docs/**",
+        "$TURBO_ROOT$/tooling/repository/src/core/{command-runner,schema}.ts",
+        "$TURBO_ROOT$/prettier.config.mjs",
+        "$TURBO_ROOT$/pnpm-lock.yaml"
+      ]
+    }
+  }
+}

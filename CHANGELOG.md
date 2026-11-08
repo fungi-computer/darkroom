@@ -1,5 +1,17 @@
 # @fungi.computer/darkroom
 
+## 0.5.5
+
+### Patch Changes
+
+- Changes since 0.5.4:
+
+  - fix(docs): build Shiitake before darkroom's API docs; record Vishnu docs
+    exclusion
+
+- Updated dependencies
+  - @fungi.computer/agar@0.9.0
+
 ## 0.5.4
 
 ### Patch Changes
