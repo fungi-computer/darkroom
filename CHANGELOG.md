@@ -1,5 +1,13 @@
 # @fungi.computer/darkroom
 
+## 0.5.7
+
+### Patch Changes
+
+- Changes since 0.5.6:
+
+  - fix(oyster): run trial Git storage in Wrangler's local simulator
+
 ## 0.5.6
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@fungi.computer/darkroom",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "author": "Levi <levi@technomancy.dev>",
   "description": "Media generation, durable output retention and provenance with host-owned authority and billing",
   "type": "module",
@@ -85,7 +85,7 @@
     "@types/node": "24.13.3",
     "typescript": "5.9.3",
     "vitest": "4.1.11",
-    "wrangler": "4.156.2",
+    "wrangler": "4.159.0",
     "@cloudflare/vitest-plugin": "1.1.2",
     "@types/png-chunks-extract": "1.0.2",
     "@types/png-chunks-encode": "1.0.2",
