@@ -6,7 +6,13 @@ import {
   type ImageViewFitter,
   type ReferenceImageFitter,
 } from "../index.js";
-import { referenceImageTransform } from "../reference-image-size.js";
+import {
+  referenceImageFormat,
+  referenceImageTransform,
+} from "../reference-image-size.js";
+
+/** WebP quality for lossy references; visually near-lossless at a fraction of PNG's bytes. */
+const REFERENCE_WEBP_QUALITY = 85;
 
 /** The retained `read_image` encoding: JPEG at quality 80. */
 const VIEW_JPEG_QUALITY = 80;
@@ -58,6 +64,11 @@ export type MediaImagePort = {
               /** Actual output encoding. */
               format: "image/jpeg";
               quality: number;
+            }
+          | {
+              /** Actual output encoding. */
+              format: "image/webp";
+              quality: number;
             },
       ): Promise<{
         /** Provider response or encoded image response. */
@@ -69,8 +80,8 @@ export type MediaImagePort = {
 
 /**
  * Media's reference preparation on the Images binding: decode the real bytes,
- * fit the selected model's reference size as PNG, then decode the output so
- * its metadata describes the bytes actually sent.
+ * fit the selected model's reference size in its catalog encoding, then decode
+ * the output so its metadata describes the bytes actually sent.
  */
 export function createImagesReferenceFitter(
   images: MediaImagePort,
@@ -85,13 +96,20 @@ export function createImagesReferenceFitter(
       throw new MediaSettingsError("reference image is not a supported image");
     }
     const transform = referenceImageTransform(model, info.width, info.height);
-    if (info.width !== transform.width || info.height !== transform.height) {
+    const target = referenceImageFormat(model);
+    if (
+      info.width !== transform.width ||
+      info.height !== transform.height ||
+      (target === "image/webp" && info.format !== target)
+    ) {
       const output = await images
         .input(stream(bytes))
         .transform(transform)
-        .output({
-          format: "image/png",
-        });
+        .output(
+          target === "image/webp"
+            ? { format: target, quality: REFERENCE_WEBP_QUALITY }
+            : { format: target },
+        );
       bytes = new Uint8Array(await output.response().arrayBuffer());
       if (bytes.byteLength === 0 || bytes.byteLength > MAX_REFERENCE_BYTES)
         throw new MediaSettingsError("reference image exceeds the byte limit");

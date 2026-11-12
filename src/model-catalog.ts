@@ -75,6 +75,15 @@ export const mediaModelInputSchema = z.lazy(() =>
       referenceField: z.string().min(1).max(256).nullable(),
       /** Maximum references accepted by this model. */
       maxReferences: z.number().int().nonnegative(),
+      /** Long edge, in pixels, an image model's references are fitted to; null for video models. */
+      referenceDimension: z.number().int().positive().nullable(),
+      /** Encoding of a fitted reference: PNG is lossless, WebP bounds the request body. */
+      referenceFormat: z.enum({
+        /** Lossless PNG. */
+        png: "png",
+        /** Lossy WebP. */
+        webp: "webp",
+      }),
     })
     .readonly(),
 );
@@ -410,6 +419,8 @@ function videoModel(
       defaultSteps: null,
       referenceField: seedance ? "image" : "image_input",
       maxReferences: seedance ? 4 : 1,
+      referenceDimension: null,
+      referenceFormat: "png",
     },
   });
 }
@@ -524,6 +535,8 @@ function minimaxVideoModel(): MediaModel {
       // directly); recorded for the same documentation parity as Seedance/Veo.
       referenceField: "image_url",
       maxReferences: 4,
+      referenceDimension: null,
+      referenceFormat: "png",
     },
   });
 }
@@ -548,6 +561,9 @@ const models: readonly MediaModel[] = Object.freeze([
       defaultSteps: 4,
       referenceField: null,
       maxReferences: 0,
+      // No documented reference size for this model; the retained 512 px fit.
+      referenceDimension: 512,
+      referenceFormat: "png",
     },
   }),
   freezeModel({
@@ -568,6 +584,9 @@ const models: readonly MediaModel[] = Object.freeze([
       defaultSteps: 4,
       referenceField: "input_image_",
       maxReferences: 4,
+      // No documented reference size for this model; the retained 512 px fit.
+      referenceDimension: 512,
+      referenceFormat: "png",
     },
   }),
   freezeModel({
@@ -588,6 +607,9 @@ const models: readonly MediaModel[] = Object.freeze([
       defaultSteps: 4,
       referenceField: "input_image_",
       maxReferences: 4,
+      // No documented reference size for this model; the retained 512 px fit.
+      referenceDimension: 512,
+      referenceFormat: "png",
     },
   }),
   freezeModel({
@@ -608,6 +630,9 @@ const models: readonly MediaModel[] = Object.freeze([
       defaultSteps: 20,
       referenceField: "input_image_",
       maxReferences: 4,
+      // No documented reference size for this model; the retained 512 px fit.
+      referenceDimension: 512,
+      referenceFormat: "png",
     },
   }),
   freezeModel({
@@ -629,6 +654,9 @@ const models: readonly MediaModel[] = Object.freeze([
       defaultSteps: null,
       referenceField: null,
       maxReferences: 0,
+      // No documented reference size for this model; the retained 512 px fit.
+      referenceDimension: 512,
+      referenceFormat: "png",
     },
   }),
   freezeModel({
@@ -650,6 +678,9 @@ const models: readonly MediaModel[] = Object.freeze([
       defaultSteps: 25,
       referenceField: null,
       maxReferences: 0,
+      // No documented reference size for this model; the retained 512 px fit.
+      referenceDimension: 512,
+      referenceFormat: "png",
     },
   }),
   // Third-party models run through the AI Gateway (Unified Billing): OpenAI's
@@ -679,6 +710,14 @@ const models: readonly MediaModel[] = Object.freeze([
       // 16 is Cloudflare's published schema limit, the route Prints calls.
       referenceField: "images",
       maxReferences: 16,
+      // Neither OpenAI nor Cloudflare documents an input size for this model;
+      // it reads every input at high fidelity and is reported to upscale
+      // small inputs toward 1024 px, so 512 px references were upscaled blur.
+      // 1024 px is also the edge of its documented 1024x1024 output.
+      referenceDimension: 1024,
+      // Its `images[]` data URIs accept webp (Cloudflare schema); WebP keeps
+      // 16 references well under the request body bound that PNG would break.
+      referenceFormat: "webp",
     },
   }),
   videoModel(

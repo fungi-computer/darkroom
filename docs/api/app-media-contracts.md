@@ -139,6 +139,11 @@ const mediaCatalogModelSchema: ZodReadonly<ZodObject<{
      defaultSteps: ZodNullable<ZodNumber>;
      referenceField: ZodNullable<ZodString>;
      maxReferences: ZodNumber;
+     referenceDimension: ZodNullable<ZodNumber>;
+     referenceFormat: ZodEnum<{
+        png: "png";
+        webp: "webp";
+     }>;
   }, $strict>>>;
   sizes: ZodNullable<ZodReadonly<ZodArray<ZodString>>>;
   video: ZodNullable<ZodLazy<ZodReadonly<ZodObject<{
@@ -246,6 +251,11 @@ const mediaModelsSchema: ZodLazy<ZodArray<ZodReadonly<ZodObject<{
      defaultSteps: ZodNullable<ZodNumber>;
      referenceField: ZodNullable<ZodString>;
      maxReferences: ZodNumber;
+     referenceDimension: ZodNullable<ZodNumber>;
+     referenceFormat: ZodEnum<{
+        png: ...;
+        webp: ...;
+     }>;
   }, $strict>>>;
   sizes: ZodNullable<ZodReadonly<ZodArray<ZodString>>>;
   video: ZodNullable<ZodLazy<ZodReadonly<ZodObject<{
@@ -563,6 +573,8 @@ const appMediaModelsOutcomeSchema: ZodUnion<readonly [ZodLazy<ZodArray<ZodReadon
      defaultSteps: ...;
      referenceField: ...;
      maxReferences: ...;
+     referenceDimension: ...;
+     referenceFormat: ...;
   }, $strict>>>;
   sizes: ZodNullable<ZodReadonly<ZodArray<ZodString>>>;
   video: ZodNullable<ZodLazy<ZodReadonly<ZodObject<..., ...>>>>;

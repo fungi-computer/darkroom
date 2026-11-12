@@ -1,15 +1,13 @@
 import { getMediaModel, MediaSettingsError } from "./model-catalog.js";
 
-/** Maximum long edge for image-model references, in pixels. */
-export const MAX_REFERENCE_DIMENSION = 512;
 const MIN_VIDEO_REFERENCE_DIMENSION = 320;
 
 /** One owner for both native fitting and the resolved-reference boundary. */
 function sizing(modelId: string) {
   const model = getMediaModel(modelId);
   if (model === undefined) throw new MediaSettingsError("unknown Media model");
-  return model.video === null
-    ? { edge: "long" as const, dimension: MAX_REFERENCE_DIMENSION }
+  return model.video === null && model.input.referenceDimension !== null
+    ? { edge: "long" as const, dimension: model.input.referenceDimension }
     : { edge: "short" as const, dimension: MIN_VIDEO_REFERENCE_DIMENSION };
 }
 
@@ -47,4 +45,13 @@ export function referenceImageSizeIsValid(
   return rule.edge === "short"
     ? Math.min(width, height) >= rule.dimension
     : Math.max(width, height) <= rule.dimension;
+}
+
+/** The encoding the selected model's fitted references are sent in. */
+export function referenceImageFormat(modelId: string) {
+  const model = getMediaModel(modelId);
+  if (model === undefined) throw new MediaSettingsError("unknown Media model");
+  return model.input.referenceFormat === "webp"
+    ? ("image/webp" as const)
+    : ("image/png" as const);
 }

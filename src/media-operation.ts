@@ -334,7 +334,8 @@ export function executeMediaOperation(input: MediaExecution) {
             embedded: false,
             reason: "unsupported-format",
           };
-      if (!provenance.embedded)
+      // Formats with no embed path (MP4, GIF) are expected; only a real failure warns.
+      if (!provenance.embedded && provenance.reason !== "unsupported-format")
         console.warn("Media provenance not embedded", {
           format: output.format,
           reason: provenance.reason,

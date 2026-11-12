@@ -712,6 +712,26 @@ describe("MediaOperationOwner internal durable owner", () => {
     }
     const png = () => Promise.resolve({ bytes: generatedBytes, format: "png" });
 
+    it("warns when provenance cannot be embedded in an image it should cover", async () => {
+      const warn = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+      const test = fixture();
+      await execute(
+        test.owner,
+        "request-a",
+        vi.fn(png),
+        vi.fn(() => Promise.resolve()),
+        undefined,
+        ledger().metering,
+      );
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        "Media provenance not embedded",
+        { format: "png", reason: "invalid-image" },
+      );
+      warn.mockRestore();
+    });
+
     it("refuses before any provider dispatch and lets the same request retry after funding", async () => {
       const test = fixture();
       const run = vi.fn(png);
@@ -1209,6 +1229,9 @@ describe("MediaOperationOwner internal durable owner", () => {
         .spyOn(globalThis, "fetch")
         .mockResolvedValue(new Response(mp4));
 
+      const warn = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
       const test = fixture(":memory:", new Map(), { run: aiRun });
       const billing = perSecondLedger();
       const write = vi.fn(() => Promise.resolve());
@@ -1260,6 +1283,9 @@ describe("MediaOperationOwner internal durable owner", () => {
         costMilliunits: 86_250,
       });
       expect(write).toHaveBeenCalledExactlyOnceWith(mp4);
+      // MP4 carries no embedded provenance by design, so that is not a fault.
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
       expect(billing.settlements).toEqual([
         { operationId: "media-operation-a", units: 5 },
       ]);

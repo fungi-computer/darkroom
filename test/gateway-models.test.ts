@@ -329,6 +329,13 @@ describe("gateway Media models", () => {
         maxReferences: 16,
         referenceField: "images",
       });
+      expect(getMediaModel("openai/gpt-image-2")?.input).toMatchObject({
+        referenceDimension: 1024,
+        referenceFormat: "webp",
+      });
+      expect(
+        getMediaModel("@cf/black-forest-labs/flux-2-klein-4b")?.input,
+      ).toMatchObject({ referenceDimension: 512, referenceFormat: "png" });
       expect(
         getMediaModel("@cf/black-forest-labs/flux-1-schnell")?.input
           .maxReferences,
@@ -436,6 +443,19 @@ describe("gateway Media models", () => {
       expect(
         estimateGatewayMilliunits(withReferences(1), [
           { width: 2048, height: 1024 },
+        ]),
+      ).toBe(Math.ceil((1056 * 30 + 30 * 5 + 1 * 5 + 6563 * 8) / 10));
+      // 1024 x 1024 (a fitted GPT Image 2 reference) caps the short side at
+      // 512: one tile, the same bill as 512 square.
+      expect(
+        estimateGatewayMilliunits(withReferences(1), [
+          { width: 1024, height: 1024 },
+        ]),
+      ).toBe(Math.ceil((1056 * 30 + 30 * 5 + 1 * 5 + 4354 * 8) / 10));
+      // 1024 x 768 scales to 683 x 512: two tiles across, one down.
+      expect(
+        estimateGatewayMilliunits(withReferences(1), [
+          { width: 1024, height: 768 },
         ]),
       ).toBe(Math.ceil((1056 * 30 + 30 * 5 + 1 * 5 + 6563 * 8) / 10));
       expect(base).toBe(Math.ceil((1056 * 30 + 30 * 5) / 10));

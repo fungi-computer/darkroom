@@ -26,7 +26,7 @@ const pixelImages: MediaImagePort = {
     const bytes = await new Response(input).arrayBuffer();
     const info = await sharp(bytes).metadata();
     return {
-      format: "image/png",
+      format: info.format === "webp" ? "image/webp" : "image/png",
       width: info.width,
       height: info.height,
       fileSize: bytes.byteLength,
@@ -34,16 +34,20 @@ const pixelImages: MediaImagePort = {
   },
   input: (input) => ({
     transform: (options) => ({
-      output: async () => {
-        const bytes = await sharp(await new Response(input).arrayBuffer())
-          .resize({
-            width: options.width,
-            height: options.height,
-            fit: "inside",
-            withoutEnlargement: options.fit === "scale-down",
-          })
-          .png()
-          .toBuffer();
+      output: async (encoding) => {
+        const resized = sharp(await new Response(input).arrayBuffer()).resize({
+          width: options.width,
+          height: options.height,
+          fit: "inside",
+          withoutEnlargement: options.fit === "scale-down",
+        });
+        const bytes = await (
+          encoding.format === "image/webp"
+            ? resized.webp({ quality: encoding.quality })
+            : encoding.format === "image/jpeg"
+              ? resized.jpeg({ quality: encoding.quality })
+              : resized.png()
+        ).toBuffer();
         return { response: () => new Response(new Uint8Array(bytes)) };
       },
     }),
@@ -211,6 +215,33 @@ describe("Images reference fitting", () => {
       expect(reference).toMatchObject(expected);
     },
   );
+
+  it("fits GPT Image 2 references to 1024 px as WebP and others to 512 px PNG", async () => {
+    const bytes = await sharp({
+      create: { width: 2048, height: 1536, channels: 3, background: "teal" },
+    })
+      .png()
+      .toBuffer();
+    const fit = createImagesReferenceFitter(pixelImages);
+    const fitted = await fit(new Uint8Array(bytes), "openai/gpt-image-2");
+    expect(fitted).toMatchObject({ width: 1024, height: 768, format: "webp" });
+    expect((await sharp(fitted.bytes).metadata()).format).toBe("webp");
+    const flux = await fit(new Uint8Array(bytes), imageModel);
+    expect(flux).toMatchObject({ width: 512, height: 384, format: "png" });
+  });
+
+  it("re-encodes a small PNG as WebP for GPT Image 2 without resizing", async () => {
+    const bytes = await sharp({
+      create: { width: 300, height: 200, channels: 3, background: "white" },
+    })
+      .png()
+      .toBuffer();
+    const fitted = await createImagesReferenceFitter(pixelImages)(
+      new Uint8Array(bytes),
+      "openai/gpt-image-2",
+    );
+    expect(fitted).toMatchObject({ width: 300, height: 200, format: "webp" });
+  });
 
   it("scales an oversized image and uses decoded output metadata", async () => {
     const info = vi

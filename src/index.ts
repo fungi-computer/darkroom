@@ -1,7 +1,6 @@
 import * as z from "zod";
 import { reportCatchFailure } from "./failure.js";
 import { referenceImageSizeIsValid } from "./reference-image-size.js";
-export { MAX_REFERENCE_DIMENSION } from "./reference-image-size.js";
 import {
   getMediaModel,
   MAX_REFERENCE_COUNT,
@@ -121,7 +120,7 @@ export type MediaProvider = (
 
 /** A decoded reference image, fitted for the selected model. */
 export type FittedReferenceImage = Omit<MediaReferenceBytes, "filename">;
-/** Decode and fit a reference: image long edge ≤512, video short edge ≥320. */
+/** Decode and fit a reference: image long edge within the model's catalog dimension, video short edge ≥320. */
 export type ReferenceImageFitter = (
   bytes: Uint8Array,
   model: string,
@@ -149,6 +148,13 @@ export type ImageViewFitter = (
 const MAX_VIDEO_REFERENCE_COUNT = 4;
 /** Maximum decoded bytes per reference image. */
 export const MAX_REFERENCE_BYTES = 8 * 1024 * 1024;
+/**
+ * Maximum decoded bytes across every reference of one request. Base64 adds a
+ * third, so 24 MiB stays near 32 MiB on the wire, under OpenAI's 50 MB cap on
+ * one image-edit request.
+ * https://platform.openai.com/docs/api-reference/images/createEdit
+ */
+export const MAX_REFERENCE_BODY_BYTES = 24 * 1024 * 1024;
 /** Maximum retained still-image output bytes. */
 export const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 
@@ -611,6 +617,7 @@ export const resolveMediaReferences = async (
       `${model.id} accepts at most ${String(model.input.maxReferences)} reference images`,
     );
   const resolved: MediaReferenceBytes[] = [];
+  let totalBytes = 0;
   for (const reference of references) {
     const image = await reader.read(reference, settings.model);
     if (
@@ -626,6 +633,11 @@ export const resolveMediaReferences = async (
     )
       throw new MediaSettingsError(
         `reference ${reference.computerId}:${reference.path} exceeds the bounded image contract`,
+      );
+    totalBytes += image.bytes.byteLength;
+    if (totalBytes > MAX_REFERENCE_BODY_BYTES)
+      throw new MediaSettingsError(
+        "reference images exceed the total request size limit",
       );
     resolved.push(Object.freeze({ ...image }));
   }

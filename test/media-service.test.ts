@@ -4,7 +4,7 @@ import {
   getMediaModel,
   listMediaModels,
   MAX_REFERENCE_BYTES,
-  MAX_REFERENCE_DIMENSION,
+  MAX_REFERENCE_BODY_BYTES,
   normalizeMediaProviderOutput,
   mediaProviderWireSchema,
   resolveMediaReferences,
@@ -310,8 +310,7 @@ describe("retained Media reference boundary", () => {
   it("rejects oversized dimensions and bytes", async () => {
     await expect(
       resolveMediaReferences(settings, {
-        read: () =>
-          Promise.resolve({ ...reference, width: MAX_REFERENCE_DIMENSION + 1 }),
+        read: () => Promise.resolve({ ...reference, width: 513 }),
       }),
     ).rejects.toThrow(/bounded/iu);
     await expect(
@@ -323,6 +322,33 @@ describe("retained Media reference boundary", () => {
           }),
       }),
     ).rejects.toThrow(/bounded/iu);
+  });
+
+  it("bounds the total bytes across a 16-reference GPT Image 2 request", async () => {
+    const gpt = validateMediaGenerationSettings({
+      model: "openai/gpt-image-2",
+      prompt: "edit",
+      width: 1024,
+      height: 1024,
+      references: Array.from({ length: 16 }, (_, i) => ({
+        computerId: "c",
+        path: `/${String(i)}.webp`,
+      })),
+    });
+    const each = (count: number, size: number) =>
+      resolveMediaReferences(gpt, {
+        read: () =>
+          Promise.resolve({
+            format: "webp" as const,
+            width: 1024,
+            height: 1024,
+            bytes: new Uint8Array(size),
+          }),
+      }).then((all) => all.length === count);
+    await expect(each(16, MAX_REFERENCE_BODY_BYTES / 16)).resolves.toBe(true);
+    await expect(each(16, MAX_REFERENCE_BODY_BYTES / 16 + 1)).rejects.toThrow(
+      /total request size/iu,
+    );
   });
 
   it.each(mediaVideoModelIdSchema.options)(

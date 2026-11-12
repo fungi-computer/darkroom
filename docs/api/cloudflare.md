@@ -662,8 +662,8 @@ function createImagesReferenceFitter(images): ReferenceImageFitter;
 ```
 
 Media's reference preparation on the Images binding: decode the real bytes, fit
-the selected model's reference size as PNG, then decode the output so its
-metadata describes the bytes actually sent.
+the selected model's reference size in its catalog encoding, then decode the
+output so its metadata describes the bytes actually sent.
 
 #### Parameters
 

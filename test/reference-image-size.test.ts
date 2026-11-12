@@ -19,6 +19,18 @@ describe("model-specific reference image sizing", () => {
       expected: { width: 320, height: 640, fit: "contain" },
     },
     {
+      model: "openai/gpt-image-2",
+      width: 2048,
+      height: 1024,
+      expected: { width: 1024, height: 512, fit: "scale-down" },
+    },
+    {
+      model: "openai/gpt-image-2",
+      width: 800,
+      height: 600,
+      expected: { width: 800, height: 600, fit: "scale-down" },
+    },
+    {
       model: "@cf/black-forest-labs/flux-2-klein-4b",
       width: 1774,
       height: 887,
@@ -36,6 +48,22 @@ describe("model-specific reference image sizing", () => {
       expect(referenceImageTransform(model, width, height)).toEqual(expected);
     },
   );
+
+  it("accepts 1024 px GPT Image 2 references and refuses 1025 px or 513 px elsewhere", () => {
+    expect(referenceImageSizeIsValid("openai/gpt-image-2", 1024, 768)).toBe(
+      true,
+    );
+    expect(referenceImageSizeIsValid("openai/gpt-image-2", 1025, 768)).toBe(
+      false,
+    );
+    expect(
+      referenceImageSizeIsValid(
+        "@cf/black-forest-labs/flux-2-klein-4b",
+        513,
+        1,
+      ),
+    ).toBe(false);
+  });
 
   it("refuses a 512×256 video reference even though it fits the image long-edge cap", () => {
     expect(referenceImageSizeIsValid("bytedance/seedance-2.0", 512, 256)).toBe(
