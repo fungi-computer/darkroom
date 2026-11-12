@@ -73,7 +73,7 @@ Bounded refusal reason.
 
 ```ts
 type ProvenanceExportFailure =
-  "too-large" | "signed-image" | "invalid-image" | "unsupported-format";
+  "too-large" | "invalid-image" | "unsupported-format";
 ```
 
 Why a lossless public image export was refused.

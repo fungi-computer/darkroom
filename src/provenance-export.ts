@@ -3,13 +3,14 @@ import ExifReader from "exifreader";
 import { createRiffContainer, parseRiff } from "@fungi.computer/ts-webp";
 import { replacePngXmp } from "./provenance-png.js";
 import { replaceJpegXmp } from "./provenance-jpeg.js";
+import { hasC2paSignature } from "./provenance-signed.js";
 import { publicProvenancePacket } from "./provenance-xmp.js";
 
 /** The admitted Computer file read and generated output share this launch bound. */
 export const maximumPrintDownloadBytes = 32 * 1024 * 1024;
 /** Why a lossless public image export was refused. */
 export type ProvenanceExportFailure =
-  "too-large" | "signed-image" | "invalid-image" | "unsupported-format";
+  "too-large" | "invalid-image" | "unsupported-format";
 /** A refusal to export unsafe, unsupported or oversized image bytes. */
 export class ProvenanceExportError extends Error {
   /** Stable export refusal name. */
@@ -71,11 +72,10 @@ export async function stripPrivateProvenance(bytes: Uint8Array): Promise<{
 }> {
   if (bytes.length > maximumPrintDownloadBytes)
     throw new ProvenanceExportError("too-large");
-  // Match the embed owner's conservative signed-image policy. This is not
-  // signature validation, and stripping never silently invalidates a signature.
-  const text = new TextDecoder("latin1").decode(bytes);
-  if (text.includes("c2pa") || text.includes("caBX"))
-    throw new ProvenanceExportError("signed-image");
+  // Embed never writes Prints XMP into a C2PA-signed image, so a signed file
+  // holds nothing private to remove. Export its stored bytes unchanged, which
+  // also keeps the provider's Content Credentials valid.
+  const signed = hasC2paSignature(bytes);
   try {
     const metadata = await ExifReader.loadView(
       new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength),
@@ -99,7 +99,8 @@ export async function stripPrivateProvenance(bytes: Uint8Array): Promise<{
       type: `image/${format}`,
       extension: format === "jpeg" ? "jpg" : format,
     };
-    if (format === "gif" && !metadata.xmp) return { bytes, ...mime };
+    if (signed || (format === "gif" && !metadata.xmp))
+      return { bytes, ...mime };
     const packet = publicProvenancePacket(
       metadata.xmp?._raw ?? metadata.pngText?.["XML:com.adobe.xmp"]?.value,
     );

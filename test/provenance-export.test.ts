@@ -1,12 +1,45 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
 import { create } from "xmlbuilder2";
+import extract from "png-chunks-extract";
+import encode from "png-chunks-encode";
+import { createRiffContainer, parseRiff } from "@fungi.computer/ts-webp";
+import { hasC2paSignature } from "../src/provenance-signed.js";
 import { embedProvenance } from "../src/provenance.js";
 import {
   maximumPrintDownloadBytes,
   ProvenanceExportError,
   stripPrivateProvenance,
 } from "../src/provenance-export.js";
+
+/** Adds a provider-style C2PA container the way each format carries one. */
+function signedCopy(
+  raw: Uint8Array,
+  format: "png" | "jpeg" | "webp",
+): Uint8Array {
+  const manifest = new TextEncoder().encode("c2pa proof manifest");
+  if (format === "png") {
+    const chunks = extract(raw);
+    chunks.splice(1, 0, { name: "caBX", data: manifest });
+    return encode(chunks);
+  }
+  if (format === "jpeg") {
+    const length = manifest.length + 2;
+    return Uint8Array.from([
+      ...raw.subarray(0, 2),
+      0xff,
+      0xeb,
+      length >> 8,
+      length & 255,
+      ...manifest,
+      ...raw.subarray(2),
+    ]);
+  }
+  return createRiffContainer([
+    ...parseRiff(raw).map(({ fourCC, data }) => ({ fourCC, data })),
+    { fourCC: "C2PA", data: manifest },
+  ]);
+}
 
 const facts = {
   printId: "media_public_id",
@@ -88,10 +121,22 @@ describe("public export preserves pixels, never prompt or lineage", () => {
       stripPrivateProvenance(new Uint8Array(maximumPrintDownloadBytes + 1)),
     ).rejects.toMatchObject({ reason: "too-large" });
   });
-  it("refuses signed or malformed images instead of a raw-file fallback", async () => {
-    await expect(
-      stripPrivateProvenance(new TextEncoder().encode("c2pa")),
-    ).rejects.toMatchObject({ reason: "signed-image" });
+  for (const format of ["png", "jpeg", "webp"] as const) {
+    it(`${format}: exports a C2PA-signed image byte-for-byte unchanged`, async () => {
+      const raw = await sharp({
+        create: { width: 9, height: 7, channels: 4, background: "green" },
+      })
+        .toFormat(format)
+        .toBuffer();
+      const signed = signedCopy(raw, format);
+      expect(hasC2paSignature(signed)).toBe(true);
+      const output = await stripPrivateProvenance(signed);
+      expect(output.bytes).toEqual(signed);
+      expect(output.type).toBe(`image/${format}`);
+      expect(output.extension).toBe(format === "jpeg" ? "jpg" : format);
+    });
+  }
+  it("refuses malformed images instead of a raw-file fallback", async () => {
     await expect(
       stripPrivateProvenance(new Uint8Array([1, 2, 3])),
     ).rejects.toBeInstanceOf(ProvenanceExportError);

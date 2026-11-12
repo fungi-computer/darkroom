@@ -1,6 +1,7 @@
 import { Buffer as NodeBuffer } from "node:buffer";
 import { replacePngXmp } from "./provenance-png.js";
 import { replaceJpegXmp } from "./provenance-jpeg.js";
+import { hasC2paSignature } from "./provenance-signed.js";
 import type { ImageFormat } from "./index.js";
 import { reportCatchFailure } from "./failure.js";
 
@@ -64,10 +65,7 @@ export async function embedProvenance(
 ): Promise<ProvenanceEmbedResult> {
   if (format === "gif" || format === "mp4")
     return { bytes, embedded: false, reason: "unsupported-format" };
-  if (
-    NodeBuffer.from(bytes).includes("c2pa") ||
-    NodeBuffer.from(bytes).includes("caBX")
-  )
+  if (hasC2paSignature(bytes))
     return { bytes, embedded: false, reason: "signed-image" };
   try {
     const xmp = await packet(facts);

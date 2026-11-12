@@ -1,5 +1,13 @@
 # @fungi.computer/darkroom
 
+## 0.5.8
+
+### Patch Changes
+
+- Changes since 0.5.7:
+
+  - fix(prints): download C2PA-signed images unchanged
+
 ## 0.5.7
 
 ### Patch Changes
