@@ -44,10 +44,10 @@ describe("per-model prompt limits", () => {
     expect(() =>
       validateMediaGenerationSettings({
         model: "bytedance/seedance-2.0",
-        prompt: "a".repeat(2_001),
+        prompt: "a".repeat(10_001),
         width: 1280,
         height: 720,
       }),
-    ).toThrow(/limit is 2000/u);
+    ).toThrow(/limit is 10000/u);
   });
 });

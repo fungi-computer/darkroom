@@ -92,10 +92,12 @@ export const mediaModelInputSchema = z.lazy(() =>
  * Schema ceiling for reference lists: the largest per-model limit. Each model's
  * own `maxReferences` / `maxReferenceImages` is enforced after parsing.
  */
-export const MAX_REFERENCE_COUNT = 16;
+export const MAX_REFERENCE_COUNT = 30;
 
 /** Verified Unified AI video identifiers; no inferred family aliases. */
 export const mediaVideoModelIdSchema = z.enum({
+  /** Seedance 2.5. */
+  seedance25: "bytedance/seedance-2.5",
   /** Seedance 2.0. */
   seedance: "bytedance/seedance-2.0",
   /** Seedance 2.0 Fast. */
@@ -301,6 +303,64 @@ const freezeModel = (
     input: Object.freeze(model.input),
   });
 
+/**
+ * GPT Image 2's `size` is `auto` or any WIDTHxHEIGHT with each edge at most
+ * 3840, both edges multiples of 16, an aspect ratio between 1:3 and 3:1 and a
+ * total of 655,360 to 8,294,400 pixels (no enum).
+ * https://developers.cloudflare.com/ai/models/openai/gpt-image-2/
+ * https://developers.cloudflare.com/ai/models/openai/gpt-image-2/schema-input.json
+ * The catalog lists each common ratio at a standard size (about one megapixel;
+ * the three sizes Prints always offered stay as they were) and at the largest
+ * size the limits allow, so every entry is exact in ratio and in bounds.
+ */
+const GPT_IMAGE_MAX_EDGE = 3_840;
+/** Largest pixel count the documented size grammar admits. */
+const GPT_IMAGE_MAX_PIXELS = 8_294_400;
+const GPT_IMAGE_RATIOS = [
+  [1, 1],
+  [4, 3],
+  [3, 4],
+  [3, 2],
+  [2, 3],
+  [16, 9],
+  [9, 16],
+  [21, 9],
+] as const;
+const gptImageSizes: readonly string[] = (() => {
+  const keep = new Set(["1024x1024", "1024x1536", "1536x1024"]);
+  const standard: string[] = [];
+  const largest: string[] = [];
+  for (const [across, down] of GPT_IMAGE_RATIOS) {
+    const divisor = ((a: number, b: number): number => {
+      let x = a;
+      let y = b;
+      while (y !== 0) [x, y] = [y, x % y];
+      return x;
+    })(across, down);
+    const unitW = (16 * across) / divisor;
+    const unitH = (16 * down) / divisor;
+    const unitArea = unitW * unitH;
+    const at = (k: number) => `${String(unitW * k)}x${String(unitH * k)}`;
+    const fit = Math.round(Math.sqrt(1_048_576 / unitArea));
+    const known = [...keep].find((size) => {
+      const [w, h] = size.split("x").map(Number);
+      return (w ?? 0) * down === (h ?? 0) * across;
+    });
+    standard.push(known ?? at(fit));
+    largest.push(
+      at(
+        Math.floor(
+          Math.min(
+            GPT_IMAGE_MAX_EDGE / Math.max(unitW, unitH),
+            Math.sqrt(GPT_IMAGE_MAX_PIXELS / unitArea),
+          ),
+        ),
+      ),
+    );
+  }
+  return Object.freeze([...standard, ...largest]);
+})();
+
 const videoShortEdges = {
   "480p": 480,
   "720p": 720,
@@ -318,25 +378,50 @@ const videoAspects = {
   "9:21": [9, 21],
 } satisfies Record<MediaVideoAspectRatio, readonly [number, number]>;
 
+/**
+ * Seedance 2.5's own bounds, from its Cloudflare input schema (duration 4-30,
+ * 480p/720p, `reference_images` up to 30, a 25,000-character prompt, no 9:21).
+ * https://developers.cloudflare.com/ai/models/bytedance/seedance-2.5/
+ * Prices are Cloudflare dashboard prices, supplied by the owner 2026-11-13;
+ * the public model page lists none. Only the non-video-input rates apply, as
+ * video-input references are unsupported.
+ */
+const seedance25 = {
+  maxSeconds: 30,
+  maxReferenceImages: 30,
+  maxPromptLength: 25_000,
+  resolutions: ["480p", "720p"],
+  aspects: mediaVideoAspectRatioSchema.options.filter(
+    (aspectRatio) => aspectRatio !== mediaVideoAspectRatioSchema.enum.ultratall,
+  ),
+} as const;
+
 function videoModel(
   id: MediaVideoModelId,
   label: string,
   tier: MediaModelTier,
   provider: MediaVideoModel["provider"],
   rates: readonly (readonly [MediaVideoResolution, number, number])[],
+  bounds?: typeof seedance25,
 ): MediaModel {
   const seedance = provider === "seedance";
-  const aspects = seedance
-    ? mediaVideoAspectRatioSchema.options
-    : [
-        mediaVideoAspectRatioSchema.enum.wide,
-        mediaVideoAspectRatioSchema.enum.tall,
-        mediaVideoAspectRatioSchema.enum.square,
-      ];
+  const resolutions: readonly MediaVideoResolution[] =
+    bounds?.resolutions ?? rates.map(([resolution]) => resolution);
+  const maxSeconds = bounds?.maxSeconds ?? (seedance ? 12 : 8);
+  const maxReferenceImages = bounds?.maxReferenceImages ?? (seedance ? 4 : 0);
+  const aspects = bounds
+    ? bounds.aspects
+    : seedance
+      ? mediaVideoAspectRatioSchema.options
+      : [
+          mediaVideoAspectRatioSchema.enum.wide,
+          mediaVideoAspectRatioSchema.enum.tall,
+          mediaVideoAspectRatioSchema.enum.square,
+        ];
   // Nominal dimensions select resolution/aspect; upstream does not accept pixels.
   // Round the long edge to even pixels, retaining the existing 854x480 selector.
   const formats = Object.freeze(
-    rates.flatMap(([resolution]) =>
+    resolutions.flatMap((resolution) =>
       aspects.map((aspectRatio): MediaVideoFormat => {
         const [w, h] = videoAspects[aspectRatio];
         const edge = videoShortEdges[resolution];
@@ -351,34 +436,35 @@ function videoModel(
     ),
   );
   const durations = Object.freeze(
-    seedance ? [4, 5, 6, 7, 8, 9, 10, 11, 12] : [4, 6, 8],
+    seedance
+      ? Array.from({ length: maxSeconds - 3 }, (_, index) => index + 4)
+      : [4, 6, 8],
   );
   const video: MediaVideoModel = Object.freeze({
     minSeconds: 4,
-    maxSeconds: seedance ? 12 : 8,
+    maxSeconds,
     defaultSeconds: seedance ? 5 : 6,
     durations,
     provider,
     formats,
     defaultResolution: "720p",
     defaultAspectRatio: "16:9",
-    // Seedance documents `generate_audio` without a default; Veo documents
-    // `generate_audio` with default true.
+    // Veo documents `generate_audio` with default true. Seedance documents no
+    // default; Botanical chooses On (priced the same as silent) so a prompt's
+    // AUDIO and dialogue lines take effect without touching the control.
     // https://developers.cloudflare.com/ai/models/bytedance/seedance-2.0/
     // https://developers.cloudflare.com/ai/models/google/veo-3.1/
     supportsAudio: true,
-    defaultGenerateAudio: seedance ? null : true,
+    defaultGenerateAudio: true,
     referenceRoles: Object.freeze(
       seedance
         ? mediaVideoReferenceRoleSchema.options
         : [mediaVideoReferenceRoleSchema.enum.first],
     ),
-    maxReferenceImages: seedance ? 4 : 0,
+    maxReferenceImages,
     referenceResolutions: Object.freeze(
       seedance
-        ? rates
-            .map(([resolution]) => resolution)
-            .filter((resolution) => resolution !== "1080p")
+        ? resolutions.filter((resolution) => resolution !== "1080p")
         : [],
     ),
     prices: Object.freeze(
@@ -396,10 +482,13 @@ function videoModel(
     id,
     label,
     tier,
-    // Seedance: the provider's own 2,000-character bound (retained from the
-    // earlier video contract).
+    // Seedance 2.0, Fast and Mini: 10,000 characters, from each Cloudflare
+    // input schema (the earlier 2,000 rejected real ~2,500-character
+    // production prompts). https://developers.cloudflare.com/ai/models/bytedance/seedance-2.0/
     // Veo documents no character limit; keep the retained 2,048 host cap.
-    maxPromptLength: seedance ? 2_000 : UNDOCUMENTED_PROMPT_LENGTH,
+    maxPromptLength:
+      bounds?.maxPromptLength ??
+      (seedance ? 10_000 : UNDOCUMENTED_PROMPT_LENGTH),
     kind: "video",
     video,
     sizes: Object.freeze(
@@ -418,7 +507,7 @@ function videoModel(
       maxSteps: null,
       defaultSteps: null,
       referenceField: seedance ? "image" : "image_input",
-      maxReferences: seedance ? 4 : 1,
+      maxReferences: seedance ? maxReferenceImages : 1,
       referenceDimension: null,
       referenceFormat: "png",
     },
@@ -692,12 +781,12 @@ const models: readonly MediaModel[] = Object.freeze([
     outputFormats: Object.freeze(["png", "jpeg", "webp"]),
     tier: "premium",
     label: "GPT Image 2 — strong text and layout, premium",
-    sizes: Object.freeze(["1024x1024", "1024x1536", "1536x1024"]),
+    sizes: gptImageSizes,
     input: {
       transport: "json",
       dimensions: "own",
-      maxDimension: 1536,
-      maxDimensionDocumented: false,
+      maxDimension: GPT_IMAGE_MAX_EDGE,
+      maxDimensionDocumented: true,
       defaultWidth: 1024,
       defaultHeight: 1024,
       steps: "fixed",
@@ -720,6 +809,17 @@ const models: readonly MediaModel[] = Object.freeze([
       referenceFormat: "webp",
     },
   }),
+  videoModel(
+    mediaVideoModelIdSchema.enum.seedance25,
+    "Seedance 2.5",
+    "balanced",
+    "seedance",
+    [
+      ["480p", 10_280, 10_280],
+      ["720p", 23_120, 23_120],
+    ],
+    seedance25,
+  ),
   videoModel(
     mediaVideoModelIdSchema.enum.seedance,
     "Seedance 2.0",

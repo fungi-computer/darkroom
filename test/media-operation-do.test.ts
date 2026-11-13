@@ -1266,6 +1266,7 @@ describe("MediaOperationOwner internal durable owner", () => {
           duration: 5,
           resolution: "720p",
           aspect_ratio: "16:9",
+          generate_audio: true,
         },
         { gateway: { id: "fungi-hub" } },
       );

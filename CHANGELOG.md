@@ -1,5 +1,24 @@
 # @fungi.computer/darkroom
 
+## 0.6.0
+
+### Minor Changes
+
+- Changes since 0.5.12:
+
+  - fix(darkroom): keep the GPT Image 2 size limits private
+  - feat(prints): more image aspect ratios and a Match reference size
+  - feat(darkroom): default Seedance generated sound to On
+  - fix(darkroom): admit Seedance 2.0 prompts up to the provider's 10,000
+    characters
+  - feat(darkroom): price Seedance 2.5 at the dashboard rates
+  - feat(prints): add Seedance 2.5 to the Darkroom video catalog
+
+### Patch Changes
+
+- Updated dependencies
+  - @fungi.computer/agar@0.12.1
+
 ## 0.5.12
 
 ### Patch Changes

@@ -10,12 +10,20 @@ import {
  */
 const documented = [
   {
+    id: "bytedance/seedance-2.5",
+    doc: "https://developers.cloudflare.com/ai/models/bytedance/seedance-2.5/",
+    roles: ["first-frame", "last-frame", "reference"],
+    maxReferenceImages: 30,
+    supportsAudio: true,
+    defaultGenerateAudio: true,
+  },
+  {
     id: "bytedance/seedance-2.0",
     doc: "https://developers.cloudflare.com/ai/models/bytedance/seedance-2.0/",
     roles: ["first-frame", "last-frame", "reference"],
     maxReferenceImages: 4,
     supportsAudio: true,
-    defaultGenerateAudio: null,
+    defaultGenerateAudio: true,
   },
   {
     id: "bytedance/seedance-2.0-fast",
@@ -23,7 +31,7 @@ const documented = [
     roles: ["first-frame", "last-frame", "reference"],
     maxReferenceImages: 4,
     supportsAudio: true,
-    defaultGenerateAudio: null,
+    defaultGenerateAudio: true,
   },
   {
     id: "bytedance/seedance-2.0-mini",
@@ -31,7 +39,7 @@ const documented = [
     roles: ["first-frame", "last-frame", "reference"],
     maxReferenceImages: 4,
     supportsAudio: true,
-    defaultGenerateAudio: null,
+    defaultGenerateAudio: true,
   },
   {
     id: "google/veo-3.1",

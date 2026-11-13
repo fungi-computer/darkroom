@@ -288,7 +288,7 @@ describe("video refinements and provider prices", () => {
       "google/veo-3.1-fast",
       { references: [{ path: "ref.png", role: "reference" }] },
     ],
-    ["bytedance/seedance-2.0", { prompt: "x".repeat(2001) }],
+    ["bytedance/seedance-2.0", { prompt: "x".repeat(10_001) }],
     ["bytedance/seedance-2.0", { referenceVideo: "video.mp4" }],
     [
       "bytedance/seedance-2.0",
@@ -303,7 +303,10 @@ describe("video refinements and provider prices", () => {
       "bytedance/seedance-2.0",
       { references: [{ path: "ref.png", role: "video" }] },
     ],
-    ["bytedance/seedance-2.5", {}],
+    ["bytedance/seedance-2.5", { durationSeconds: 31 }],
+    ["bytedance/seedance-2.5", { resolution: "1080p" }],
+    ["bytedance/seedance-2.5", { aspectRatio: "9:21" }],
+    ["bytedance/seedance-2.6", {}],
     // MiniMax H3 Max: 5-15s, only 480p/768p, no 9:21, no audio choice.
     ["minimax/h3-max", { durationSeconds: 4 }],
     ["minimax/h3-max", { durationSeconds: 16 }],
@@ -327,7 +330,7 @@ describe("video refinements and provider prices", () => {
       MediaSettingsError,
     );
     expect(() =>
-      mediaUnits({ ...base, model: "bytedance/seedance-2.5" }),
+      mediaUnits({ ...base, model: "bytedance/seedance-2.6" }),
     ).toThrow(MediaSettingsError);
     expect(() =>
       estimateVideoMilliunits({

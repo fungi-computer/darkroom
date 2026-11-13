@@ -208,9 +208,9 @@ const generate = (service, requestId = "first-picture", input = body) =>
     body: JSON.stringify(input),
   });
 try {
-  assert.equal(listMediaModels().length, 13);
+  assert.equal(listMediaModels().length, 14);
   const service = createMediaService(host);
-  assert.equal((await (await service.request("/models")).json()).length, 13);
+  assert.equal((await (await service.request("/models")).json()).length, 14);
   assert.equal((await generate(service)).status, 503);
   assert.equal(saved.length, 0);
   const retry = await generate(service);

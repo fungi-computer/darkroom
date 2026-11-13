@@ -106,6 +106,8 @@ describe("gateway Media models", () => {
       duration: 6,
       resolution: "720p",
       aspect_ratio: "9:16",
+      // Seedance sound defaults On (Botanical's choice; the provider has none).
+      generate_audio: true,
     });
     expect(
       gatewayInput(
@@ -307,13 +309,41 @@ describe("gateway Media models", () => {
     const dataUri = `data:image/png;base64,${btoa(String.fromCharCode(...png))}`;
 
     it("keeps image sizes and dimension ceilings to what Cloudflare documents", () => {
-      // https://developers.cloudflare.com/ai/models/openai/gpt-image-2/ lists size
-      // enum 1024x1024, 1024x1536, 1536x1024 (and auto); no 16:9 or 21:9 size.
-      expect(getMediaModel("openai/gpt-image-2")?.sizes).toEqual([
-        "1024x1024",
-        "1024x1536",
-        "1536x1024",
-      ]);
+      // https://developers.cloudflare.com/ai/models/openai/gpt-image-2/schema-input.json:
+      // `size` is auto or WIDTHxHEIGHT, edges at most 3840 and multiples of 16,
+      // ratio between 1:3 and 3:1, 655,360 to 8,294,400 pixels (no enum).
+      const sizes = getMediaModel("openai/gpt-image-2")?.sizes ?? [];
+      expect(sizes).toHaveLength(16);
+      for (const size of ["1024x1024", "1024x1536", "1536x1024"])
+        expect(sizes).toContain(size);
+      for (const size of sizes) {
+        const [width = 0, height = 0] = size.split("x").map(Number);
+        expect(Math.max(width, height)).toBeLessThanOrEqual(3840);
+        expect(width % 16).toBe(0);
+        expect(height % 16).toBe(0);
+        expect(width / height).toBeGreaterThanOrEqual(1 / 3);
+        expect(width / height).toBeLessThanOrEqual(3);
+        expect(width * height).toBeGreaterThanOrEqual(655_360);
+        expect(width * height).toBeLessThanOrEqual(8_294_400);
+      }
+      // Every common ratio is there, exactly, at a standard and a largest size.
+      const proportions = new Set(
+        sizes.map((size) => {
+          const [width = 0, height = 0] = size.split("x").map(Number);
+          return (width / height).toFixed(4);
+        }),
+      );
+      for (const [across, down] of [
+        [1, 1],
+        [4, 3],
+        [3, 4],
+        [3, 2],
+        [2, 3],
+        [16, 9],
+        [9, 16],
+        [21, 9],
+      ] as const)
+        expect(proportions).toContain((across / down).toFixed(4));
       // https://developers.cloudflare.com/workers-ai/models/lucid-origin/ width/height maximum 2500.
       expect(
         getMediaModel("@cf/leonardo/lucid-origin")?.input.maxDimension,
@@ -366,7 +396,9 @@ describe("gateway Media models", () => {
       expect(
         z.object({ images: z.array(z.string()) }).parse(sixteen).images,
       ).toHaveLength(16);
-      expect(() => withReferences(17)).toThrow("settings are invalid");
+      expect(() => withReferences(17)).toThrow(
+        "openai/gpt-image-2 accepts at most 16 reference images",
+      );
       expect(() =>
         validateMediaGenerationSettings({
           model: "@cf/black-forest-labs/flux-2-klein-4b",
@@ -463,5 +495,123 @@ describe("gateway Media models", () => {
         "must match every admitted reference",
       );
     });
+  });
+});
+
+describe("GPT Image 2 sizes", () => {
+  const sized = (size: string) => {
+    const [width, height] = size.split("x").map(Number);
+    return validateMediaGenerationSettings({
+      model: "openai/gpt-image-2",
+      prompt: "a seed catalogue cover",
+      width: width ?? 0,
+      height: height ?? 0,
+    });
+  };
+
+  it("sends each catalog size as the provider's WIDTHxHEIGHT", () => {
+    for (const size of getMediaModel("openai/gpt-image-2")?.sizes ?? [])
+      expect(gatewayInput(sized(size))).toMatchObject({ size });
+    expect(() => sized("1000x1000")).toThrow("accepts only these sizes");
+  });
+
+  it("quotes the table's sizes exactly and others by their pixels", () => {
+    // 22 prompt characters at $5/M, bounded as one token each.
+    const per = (size: string) => estimateGatewayMilliunits(sized(size), []);
+    const expected = (tokens: number) => Math.ceil((tokens * 30 + 22 * 5) / 10);
+    expect(per("1024x1024")).toBe(expected(1056));
+    expect(per("1536x1024")).toBe(expected(1568));
+    // 16:9 at 3840x2160 is 8,294,400 pixels: 8,354 tokens at $30/M.
+    expect(per("3840x2160")).toBe(expected(8_354));
+    expect(per("1280x720")).toBe(expected(929));
+    expect(per("3840x2160")).toBeGreaterThan(per("1280x720"));
+  });
+});
+
+describe("Seedance 2.5", () => {
+  const id = "bytedance/seedance-2.5";
+  const clip = (
+    durationSeconds: number,
+    size = "1280x720",
+    extra: Partial<Parameters<typeof validateMediaGenerationSettings>[0]> = {},
+  ) => {
+    const [width, height] = size.split("x").map(Number);
+    return validateMediaGenerationSettings({
+      model: id,
+      prompt: "fern fronds unfurling",
+      width: width ?? 0,
+      height: height ?? 0,
+      durationSeconds,
+      ...extra,
+    });
+  };
+
+  it("lists the plain name and the documented bounds", () => {
+    const model = getMediaModel(id);
+    expect(model?.label).toBe("Seedance 2.5");
+    expect(model?.maxPromptLength).toBe(25_000);
+    expect(model?.video).toMatchObject({
+      minSeconds: 4,
+      maxSeconds: 30,
+      defaultSeconds: 5,
+      provider: "seedance",
+      supportsAudio: true,
+      maxReferenceImages: 30,
+    });
+    expect(model?.video?.durations).toHaveLength(27);
+    const formats = model?.video?.formats ?? [];
+    expect(new Set(formats.map((format) => format.resolution))).toEqual(
+      new Set(["480p", "720p"]),
+    );
+    expect(formats.map((format) => format.aspectRatio)).not.toContain("9:21");
+    // Seedance 2.0 models stay listed.
+    for (const kept of ["", "-fast", "-mini"])
+      expect(getMediaModel(`bytedance/seedance-2.0${kept}`)).toBeDefined();
+  });
+
+  it("accepts 4 to 30 seconds and refuses the rest", () => {
+    expect(clip(30).durationSeconds).toBe(30);
+    expect(() => clip(3)).toThrow("durationSeconds");
+    expect(() => clip(31)).toThrow("durationSeconds");
+    expect(() => clip(5, "1000x720")).toThrow("accepts only these sizes");
+  });
+
+  it("builds the documented request body without inventing fields", () => {
+    expect(gatewayInput(clip(30, "720x1280", { generateAudio: true }))).toEqual(
+      {
+        prompt: "fern fronds unfurling",
+        duration: 30,
+        resolution: "720p",
+        aspect_ratio: "9:16",
+        generate_audio: true,
+      },
+    );
+    const framed = z
+      .object({ image: z.string(), last_frame_image: z.string() })
+      .parse(
+        gatewayInput(
+          clip(8, "1280x720", {
+            references: [
+              { computerId: "pictures", path: "a.png", role: "first-frame" },
+              { computerId: "pictures", path: "b.png", role: "last-frame" },
+            ],
+          }),
+          [
+            { bytes: png, format: "png", width: 1, height: 1 },
+            { bytes: png, format: "png", width: 1, height: 1 },
+          ],
+        ),
+      );
+    expect(framed.image.startsWith("data:image/png;base64,")).toBe(true);
+    expect(framed.last_frame_image.startsWith("data:image/png;base64,")).toBe(
+      true,
+    );
+  });
+
+  it("quotes a 5 second 720p clip at the dashboard rate", () => {
+    // $0.2312/s at 720p (non-video input), 1 USD = 100,000 milliunits.
+    expect(estimateGatewayMilliunits(clip(5), [])).toBe(115_600);
+    // $0.1028/s at 480p.
+    expect(estimateGatewayMilliunits(clip(5, "854x480"), [])).toBe(51_400);
   });
 });

@@ -510,8 +510,8 @@ export const mediaVideoSelectionSchema = z.lazy(() =>
     resolution: mediaVideoResolutionSchema.optional(),
     /** Model-specific aspect, default 16:9. */
     aspectRatio: mediaVideoAspectRatioSchema.optional(),
-    /** Whole seconds; Seedance 4–12, Veo exactly 4/6/8, MiniMax H3 Max 5–15. */
-    durationSeconds: z.number().int().min(4).max(15).optional(),
+    /** Whole seconds; Seedance 2.0 4–12, Seedance 2.5 4–30, Veo exactly 4/6/8, MiniMax H3 Max 5–15. */
+    durationSeconds: z.number().int().min(4).max(30).optional(),
     /** Veo defaults true; Seedance omits the provider option when unset;
      * MiniMax H3 Max has no audio field and refuses an explicit choice. */
     generateAudio: z.boolean().optional(),

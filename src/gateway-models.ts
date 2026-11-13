@@ -46,12 +46,24 @@ export function mediaUnits(settings: MediaGenerationSettings): MediaUnits {
  * GPT Image 2 output tokens per image at `medium` quality. OpenAI publishes
  * this table for its gpt-image models; PRICE DECISION PENDING (Levi): confirm
  * against the first live gateway logs, which carry the real token counts.
+ * Any other size is billed in proportion to its pixels at the 1024x1024 rate
+ * (1,056 tokens per 1,048,576 pixels, which reproduces the table's 1024x1536
+ * row exactly and bounds its 1536x1024 row), rounded up; OpenAI publishes no
+ * table for the larger sizes.
  */
 const gptImageOutputTokens = new Map([
   ["1024x1024", 1_056],
   ["1024x1536", 1_584],
   ["1536x1024", 1_568],
 ]);
+const gptImageTokensPerMegapixel = 1_056 / 1_048_576;
+function gptImageOutputTokenCount(settings: MediaGenerationSettings): number {
+  const known = gptImageOutputTokens.get(sizeOf(settings));
+  return (
+    known ??
+    Math.ceil(settings.width * settings.height * gptImageTokensPerMegapixel)
+  );
+}
 /**
  * USD per million tokens: text input, image input and image output, as
  * Cloudflare publishes them for this exact model.
@@ -93,9 +105,7 @@ export function estimateGatewayMilliunits(
   references: readonly Readonly<{ width: number; height: number }>[],
 ): number {
   if (settings.model === "openai/gpt-image-2") {
-    const output = gptImageOutputTokens.get(sizeOf(settings));
-    if (output === undefined)
-      throw new MediaSettingsError("unsupported GPT Image 2 size");
+    const output = gptImageOutputTokenCount(settings);
     if (references.length !== (settings.references?.length ?? 0))
       throw new MediaSettingsError(
         "resolved references must match every admitted reference",
