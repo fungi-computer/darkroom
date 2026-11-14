@@ -1279,7 +1279,11 @@ describe("MediaOperationOwner internal durable owner", () => {
           aspect_ratio: "16:9",
           generate_audio: true,
         },
-        { gateway: { id: "fungi-hub" } },
+        expect.objectContaining({
+          gateway: { id: "fungi-hub" },
+          // SAFETY: asymmetric matcher; vitest checks the real argument is an AbortSignal.
+          signal: expect.any(AbortSignal) as unknown,
+        }),
       );
       expect(test.owner.read()).toMatchObject({
         state: "writing",
@@ -1350,7 +1354,8 @@ describe("MediaOperationOwner internal durable owner", () => {
           image: `data:image/png;base64,${btoa(String.fromCharCode(...reference.bytes))}`,
         }),
         // A first-frame input bypasses the AI Gateway; metering still settles below.
-        {},
+        // SAFETY: asymmetric matcher; vitest checks the real argument is an AbortSignal.
+        expect.objectContaining({ signal: expect.any(AbortSignal) as unknown }),
       );
       await expect(
         executeVideo(test.owner, billing.metering, write, vi.fn(), input, [
@@ -1361,6 +1366,48 @@ describe("MediaOperationOwner internal durable owner", () => {
         { operationId: "media-operation-a", units: 5 },
       ]);
       results.mockRestore();
+      test.close();
+    });
+
+    it("ends a background provider that never resolves as a retryable interruption", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const aiRun = vi.fn(() => new Promise<never>(() => undefined));
+      const test = fixture(":memory:", new Map(), { run: aiRun });
+      const billing = perSecondLedger();
+      const write = vi.fn(() => Promise.resolve());
+      await executeVideo(test.owner, billing.metering, write);
+      const alarm = test.owner.alarm();
+      await vi.advanceTimersByTimeAsync(11 * 60_000);
+      expect(test.owner.read()).toMatchObject({ state: "generating" });
+      await vi.advanceTimersByTimeAsync(2 * 60_000);
+      await alarm;
+      expect(test.owner.read()).toMatchObject({ state: "interrupted" });
+      await expect(
+        executeVideo(test.owner, billing.metering, write),
+      ).rejects.toMatchObject({ stage: "provider" });
+      expect(billing.settlements).toEqual([
+        { operationId: "media-operation-a", units: 0 },
+      ]);
+      test.close();
+    });
+
+    it("interrupts at once when an alarm retry finds a dispatched call with no output", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const aiRun = vi.fn(() => new Promise<never>(() => undefined));
+      const test = fixture(":memory:", new Map(), { run: aiRun });
+      const billing = perSecondLedger();
+      const write = vi.fn(() => Promise.resolve());
+      await executeVideo(test.owner, billing.metering, write);
+      void test.owner.alarm();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(aiRun).toHaveBeenCalledOnce();
+      // The first alarm died after dispatch; the platform retries the alarm.
+      await test.owner.alarm();
+      expect(aiRun).toHaveBeenCalledOnce();
+      expect(test.owner.read()).toMatchObject({ state: "interrupted" });
+      await expect(
+        executeVideo(test.owner, billing.metering, write),
+      ).rejects.toMatchObject({ stage: "provider" });
       test.close();
     });
 

@@ -396,30 +396,34 @@ and Veo checked 2026-10-11, MiniMax H3 Max checked 2026-10-14. They run through
 Workers `AI.run` with unprefixed IDs. Cloudflare's Workers AI `@cf/` catalog
 does not supply these video IDs.
 
-| Model                                                                                         | Resolution               | Duration                     | Reference modes                                                    | Provider USD / output second                              |
-| --------------------------------------------------------------------------------------------- | ------------------------ | ---------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------- |
-| [Seedance 2.0](https://developers.cloudflare.com/ai/models/bytedance/seedance-2.0/)           | 480p / 720p / 1080p / 4k | integers 4–12; default 5     | first frame; first + last; 1–4 reference images except at 1080p    | .07 / .15 / .37 / .78                                     |
-| [Seedance 2.0 Fast](https://developers.cloudflare.com/ai/models/bytedance/seedance-2.0-fast/) | 480p / 720p              | integers 4–12; default 5     | first frame; first + last; 1–4 reference images                    | .06 / .12                                                 |
-| [Seedance 2.0 Mini](https://developers.cloudflare.com/ai/models/bytedance/seedance-2.0-mini/) | 480p / 720p              | integers 4–12; default 5     | first frame; first + last; 1–4 reference images                    | .04 / .09                                                 |
-| [Veo 3.1](https://developers.cloudflare.com/ai/models/google/veo-3.1/)                        | 720p / 1080p             | exactly 4 / 6 / 8; default 6 | one first image                                                    | .20 silent / .40 audio at either resolution               |
-| [Veo 3.1 Fast](https://developers.cloudflare.com/ai/models/google/veo-3.1-fast/)              | 720p / 1080p             | exactly 4 / 6 / 8; default 6 | one first image                                                    | 720p .08 silent / .10 audio; 1080p .10 silent / .12 audio |
-| [MiniMax H3 Max](https://developers.cloudflare.com/ai/models/minimax/h3-max/)                 | 480p / 768p              | integers 5–15; default 5     | first frame; first + last; 1–4 reference images, either resolution | .05 / .08 (no documented audio surcharge)                 |
+| Model                                                                                         | Resolution               | Duration                     | Reference modes                                                                          | Provider USD / output second                              |
+| --------------------------------------------------------------------------------------------- | ------------------------ | ---------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Seedance 2.5 (`bytedance/seedance-2.5`)                                                       | 480p / 720p              | integers 4–30; default 5     | first frame; first + last; 1–30 reference images, plus up to 10 audio clips (30 s total) | .10 / .23                                                 |
+| [Seedance 2.0](https://developers.cloudflare.com/ai/models/bytedance/seedance-2.0/)           | 480p / 720p / 1080p / 4k | integers 4–12; default 5     | first frame; first + last; 1–4 reference images except at 1080p                          | .07 / .15 / .37 / .78                                     |
+| [Seedance 2.0 Fast](https://developers.cloudflare.com/ai/models/bytedance/seedance-2.0-fast/) | 480p / 720p              | integers 4–12; default 5     | first frame; first + last; 1–4 reference images                                          | .06 / .12                                                 |
+| [Seedance 2.0 Mini](https://developers.cloudflare.com/ai/models/bytedance/seedance-2.0-mini/) | 480p / 720p              | integers 4–12; default 5     | first frame; first + last; 1–4 reference images                                          | .04 / .09                                                 |
+| [Veo 3.1](https://developers.cloudflare.com/ai/models/google/veo-3.1/)                        | 720p / 1080p             | exactly 4 / 6 / 8; default 6 | one first image                                                                          | .20 silent / .40 audio at either resolution               |
+| [Veo 3.1 Fast](https://developers.cloudflare.com/ai/models/google/veo-3.1-fast/)              | 720p / 1080p             | exactly 4 / 6 / 8; default 6 | one first image                                                                          | 720p .08 silent / .10 audio; 1080p .10 silent / .12 audio |
+| [MiniMax H3 Max](https://developers.cloudflare.com/ai/models/minimax/h3-max/)                 | 480p / 768p              | integers 5–15; default 5     | first frame; first + last; 1–4 reference images, either resolution                       | .05 / .08 (no documented audio surcharge)                 |
 
-Seedance and Veo default to 720p and 16:9; MiniMax H3 Max defaults to 768p and
-16:9. Seedance aspects are 16:9, 4:3, 1:1, 3:4, 9:16, 21:9, and 9:21, with fixed
-24 FPS. Veo aspects are 16:9, 9:16 and 1:1. MiniMax H3 Max aspects are 16:9,
-4:3, 1:1, 3:4, 9:16 and 21:9 (no 9:21; its documented `adaptive` selector, which
+Seedance 2.5's limits come from its Cloudflare input schema and its prices from
+the Cloudflare dashboard (supplied 2026-11-13). Seedance and Veo default to 720p
+and 16:9; MiniMax H3 Max defaults to 768p and 16:9. Seedance aspects are 16:9,
+4:3, 1:1, 3:4, 9:16, 21:9, and 9:21 (Seedance 2.5 has no 9:21), with fixed 24
+FPS. Veo aspects are 16:9, 9:16 and 1:1. MiniMax H3 Max aspects are 16:9, 4:3,
+1:1, 3:4, 9:16 and 21:9 (no 9:21; its documented `adaptive` selector, which
 follows the input image's own aspect instead of a fixed box, has no nominal
-pixel size and is not exposed by this catalog). Seedance prompts are at most
-2,000 characters; Veo uses Darkroom's retained 2,048-character host limit
-because the provider page states no prompt maximum; MiniMax H3 Max's own limit
-is 7,000 but Darkroom's 2,048-character host cap binds first. Paths are trimmed,
-nonblank and at most 4,096 characters; references are bounded at four overall
-and refined per model (MiniMax H3 Max's own page documents up to nine, which
-this four-reference host ceiling cannot reach). Last frame requires exactly one
-first frame. Frame mode cannot mix with reference-image mode. Seedance's first
-image can override the requested aspect; returned width/height are nominal
-selectors, not measured MP4 dimensions.
+pixel size and is not exposed by this catalog). Seedance 2.0 prompts are at most
+10,000 characters and Seedance 2.5 prompts 25,000; Veo uses Darkroom's retained
+2,048-character host limit because the provider page states no prompt maximum;
+MiniMax H3 Max's own limit is 7,000 but Darkroom's 2,048-character host cap
+binds first. Paths are trimmed, nonblank and at most 4,096 characters;
+references are bounded at 30 overall and refined per model (MiniMax H3 Max's own
+page documents up to nine, which the catalog's four-reference limit for it
+cannot reach). Last frame requires exactly one first frame. Frame mode cannot
+mix with reference-image mode. Seedance's first image can override the requested
+aspect; returned width/height are nominal selectors, not measured MP4
+dimensions.
 
 Veo audio defaults to true and is always explicit in the provider request and
 quote. Seedance leaves `generate_audio` unset when `generateAudio` is omitted,
@@ -432,11 +436,11 @@ estimator read the catalog prices: 1 USD = 100,000 milliunits, 1 cent = 1,000.
 `mediaUnits` returns `{unit: "video_second", units: durationSeconds}`. The host
 still owns admission, settlement, markup and refusal copy.
 
-Reference limits follow the explicit Seedance parameter section's four-image
-grammar; its overview's larger counts remain unsupported. Veo 4k pricing does
-not establish a supported 4k input, and Seedance 2.5's duration grammar remains
-unverified. Video/audio references and undocumented options are refused, never
-silently dropped. Seedance frames and references become data URIs; Veo's
+Seedance 2.0 reference limits follow the explicit Seedance parameter section's
+four-image grammar; its overview's larger counts remain unsupported. Seedance
+2.5 takes up to 30 reference images. Veo 4k pricing does not establish a
+supported 4k input. Video/audio references and undocumented options are refused,
+never silently dropped. Seedance frames and references become data URIs; Veo's
 `image_input` is plain base64; MiniMax H3 Max's are data URIs inside a
 multimodal `content[]` array (`{type: "image_url", image_url: {url}, role}`),
 alongside the leading `{type: "text", text: prompt}` entry — a different

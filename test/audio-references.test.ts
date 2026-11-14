@@ -360,7 +360,8 @@ describe("reference audio through the durable background service", () => {
         expect.objectContaining({
           reference_audios: [`data:audio/wav;base64,${base64(clip)}`],
         }),
-        undefined,
+        // SAFETY: asymmetric matcher; vitest checks the real argument is an AbortSignal.
+        expect.objectContaining({ signal: expect.any(AbortSignal) as unknown }),
       );
       expect([...outputs.keys()].some((key) => key.includes("audio"))).toBe(
         false,

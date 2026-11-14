@@ -31,6 +31,8 @@ import {
   type MediaProviderDiagnostic,
 } from "@fungi.computer/agar/errors";
 
+/** Safely inside the 15-minute alarm wall-clock limit that would kill the call. */
+const backgroundProviderTimeoutMs = 12 * 60_000;
 const providerFailureSchema = z.strictObject({
   stage: mediaFailureStageSchema.extract(["provider", "normalization"]),
   safetyRefused: z.boolean(),
@@ -1089,7 +1091,22 @@ export class MediaOperationOwner {
     if (leaseId === null) return;
     if (row.dispatched_at !== null) {
       // A previous alarm dispatched and then died: never call the provider
-      // again. Recovery (claim) retains any committed output after the lease.
+      // again. No output was retained (the state is still generating), so end
+      // the operation now rather than leaving every poll pending until the
+      // lease lapses.
+      reportCatchFailure(
+        "media-operation-alarm-retry",
+        new Error("Background media alarm died after dispatch"),
+      );
+      try {
+        this.interruptGeneration(leaseId, {
+          stage: "provider",
+          safetyRefused: false,
+        });
+      } catch (cause) {
+        reportCatchFailure("media-operation-interrupt", cause);
+        /* A recovery claim already ended this lease. */
+      }
       return;
     }
     this.ctx.storage.sql.exec(
@@ -1138,13 +1155,31 @@ export class MediaOperationOwner {
         mediaGenerationSettingsSchema.strip().parse(record.input),
         this.catalogue(),
       );
-      output = await provider(
-        settings,
-        references,
-        undefined,
-        record.input.outputFormat,
-        audioReferences,
-      );
+      const controller = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timedOut = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          const timeout = new MediaExecutionError("provider", {
+            cause: new Error("Background media provider timed out"),
+          });
+          controller.abort(timeout);
+          reject(timeout);
+        }, backgroundProviderTimeoutMs);
+      });
+      try {
+        output = await Promise.race([
+          provider(
+            settings,
+            references,
+            controller.signal,
+            record.input.outputFormat,
+            audioReferences,
+          ),
+          timedOut,
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
     } catch (cause) {
       reportCatchFailure("media-operation-provider", cause);
       // Nothing was delivered; the next retry sees interrupted and releases

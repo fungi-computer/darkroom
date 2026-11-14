@@ -1,5 +1,13 @@
 # @fungi.computer/darkroom
 
+## 0.9.2
+
+### Patch Changes
+
+- Changes since 0.9.1:
+
+  - fix(media): end stuck background renders and release stopped Prints slots
+
 ## 0.9.1
 
 ### Patch Changes

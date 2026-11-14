@@ -5,6 +5,7 @@ import {
   abortAllDurableObjects,
 } from "cloudflare:test";
 import { expect, it } from "vitest";
+import { listMediaModels } from "../dist/index.js";
 import { imageBytes } from "./standalone.worker.mjs";
 
 const requestId = "standalone-retry";
@@ -51,7 +52,7 @@ it("retains native output across DO eviction and retries without another provide
   ).toBe(401);
   const catalog = await request("/models");
   expect(catalog.status).toBe(200);
-  expect(await catalog.json()).toHaveLength(15);
+  expect(await catalog.json()).toHaveLength(listMediaModels().length);
   expect(
     (await request("/generate", { method: "POST", body: "{" })).status,
   ).toBe(400);
