@@ -38,8 +38,8 @@ const reference: MediaReferenceBytes = {
 };
 
 describe("retained Media model boundary", () => {
-  it("exposes fifteen immutable model definitions", () => {
-    expect(listMediaModels()).toHaveLength(15);
+  it("exposes eighteen immutable model definitions", () => {
+    expect(listMediaModels()).toHaveLength(18);
     expect(listMediaModels().map(({ id }) => id)).toEqual([
       "@cf/black-forest-labs/flux-1-schnell",
       "@cf/black-forest-labs/flux-2-klein-4b",
@@ -56,6 +56,9 @@ describe("retained Media model boundary", () => {
       "google/veo-3.1",
       "google/veo-3.1-fast",
       "minimax/h3-max",
+      "elevenlabs/eleven-multilingual-v2",
+      "elevenlabs/eleven-v3",
+      "elevenlabs/music-v2",
     ]);
     expect(Object.isFrozen(listMediaModels())).toBe(true);
     expect(Object.isFrozen(listMediaModels()[0])).toBe(true);
@@ -174,7 +177,7 @@ describe("retained Media model boundary", () => {
   it("builds each retained provider payload without inventing fields", () => {
     // Gateway models (fixed sizes) take gatewayInput; see gateway-models.test.
     for (const model of listMediaModels().filter(
-      ({ sizes }) => sizes === null,
+      ({ sizes, kind }) => sizes === null && kind === "image",
     )) {
       const settings = validateMediaGenerationSettings({
         ...base,
@@ -359,6 +362,7 @@ describe("retained Media reference boundary", () => {
       const video = validateMediaGenerationSettings({
         ...validateMediaVideoSelection({ model: id, prompt: base.prompt }),
         references: [{ computerId: "c", path: "first.png" }],
+        audioReferences: undefined,
       });
       for (const dimensions of [
         { width: 640, height: 320 },

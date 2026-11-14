@@ -23,14 +23,15 @@ Invalid generation settings or unsupported model parameters.
 ##### Constructor
 
 ```ts
-new MediaSettingsError(message): MediaSettingsError;
+new MediaSettingsError(message, options?): MediaSettingsError;
 ```
 
 ###### Parameters
 
-| Parameter | Type     |
-| --------- | -------- |
-| `message` | `string` |
+| Parameter  | Type           |
+| ---------- | -------------- |
+| `message`  | `string`       |
+| `options?` | `ErrorOptions` |
 
 ###### Returns
 
@@ -43,6 +44,36 @@ Error.constructor;
 ```
 
 ## Type Aliases
+
+### MediaAudioReferenceBytes
+
+```ts
+type MediaAudioReferenceBytes = Readonly<{
+  bytes: Uint8Array;
+  mimeType: AudioReferenceMimeType;
+  durationSeconds: number;
+  filename?: string;
+}>;
+```
+
+One reference clip with the facts the provider request and the 30-second budget
+need.
+
+---
+
+### AudioReferenceMimeType
+
+```ts
+type AudioReferenceMimeType =
+  "audio/mpeg" | "audio/mp4" | "audio/wav" | "audio/ogg";
+```
+
+Containers a clip may arrive in: `mp3`, `m4a`, `wav`, `ogg` and `opus` files.
+Seedance 2.5 states only that clips are "base64 data:audio/... URIs" and does
+not list formats, so Darkroom admits what the gallery plays.
+https://developers.cloudflare.com/ai/models/bytedance/seedance-2.5/schema-input.json
+
+---
 
 ### ImageParams
 
@@ -153,10 +184,11 @@ MIME type corresponding to a supported image encoding.
 ### MediaOutputFormat
 
 ```ts
-type MediaOutputFormat = ImageFormat | "mp4";
+type MediaOutputFormat = ImageFormat | "mp4" | "mp3";
 ```
 
-A saved generation: an image, or an MP4 from a video model.
+A saved generation: an image, an MP4 from a video model, or an MP3 from an audio
+model.
 
 ---
 
@@ -182,14 +214,16 @@ Decoded reference bytes and the dimensions sent to the provider.
 type MediaGenerationSettings = Readonly<{
   model: string;
   prompt: string;
-  width: number;
-  height: number;
+  width?: number;
+  height?: number;
   steps?: number;
   durationSeconds?: number;
+  voiceId?: string;
   resolution?: MediaVideoResolution;
   aspectRatio?: MediaVideoAspectRatio;
   generateAudio?: boolean;
   references?: readonly MediaReference[];
+  audioReferences?: readonly MediaReference[];
 }>;
 ```
 
@@ -205,6 +239,7 @@ type MediaProvider = (
   references,
   signal?,
   outputFormat?,
+  audioReferences?,
 ) => Promise<
   Readonly<{
     bytes: Uint8Array;
@@ -218,12 +253,13 @@ out. Hosts may bind it to Workers AI or their own transport.
 
 #### Parameters
 
-| Parameter       | Type                                                     |
-| --------------- | -------------------------------------------------------- |
-| `settings`      | [`MediaGenerationSettings`](#mediagenerationsettings)    |
-| `references`    | readonly [`MediaReferenceBytes`](#mediareferencebytes)[] |
-| `signal?`       | `AbortSignal`                                            |
-| `outputFormat?` | `"png"` \| `"jpeg"` \| `"webp"`                          |
+| Parameter          | Type                                                               |
+| ------------------ | ------------------------------------------------------------------ |
+| `settings`         | [`MediaGenerationSettings`](#mediagenerationsettings)              |
+| `references`       | readonly [`MediaReferenceBytes`](#mediareferencebytes)[]           |
+| `signal?`          | `AbortSignal`                                                      |
+| `outputFormat?`    | `"png"` \| `"jpeg"` \| `"webp"`                                    |
+| `audioReferences?` | readonly [`MediaAudioReferenceBytes`](#mediaaudioreferencebytes)[] |
 
 #### Returns
 
@@ -319,6 +355,18 @@ One path-only video reference.
 
 ---
 
+### MediaAudioReferenceSelection
+
+```ts
+type MediaAudioReferenceSelection = z.output<
+  typeof mediaAudioReferenceSelectionSchema
+>;
+```
+
+One path-only audio reference.
+
+---
+
 ### MediaVideoSelectionInput
 
 ```ts
@@ -342,11 +390,22 @@ type MediaVideoSelection = Readonly<{
   durationSeconds: number;
   generateAudio?: boolean;
   references?: readonly Readonly<MediaVideoReference>[];
+  audioReferences?: readonly Readonly<MediaAudioReferenceSelection>[];
 }>;
 ```
 
 Normalized path-only video settings, ready for host-authorized reference
 hydration.
+
+---
+
+### MediaAudioSelectionInput
+
+```ts
+type MediaAudioSelectionInput = z.input<typeof mediaAudioSelectionSchema>;
+```
+
+Caller audio selection before defaults and model-specific refinements.
 
 ---
 
@@ -565,6 +624,36 @@ Immutable video capability and price metadata.
 
 ---
 
+### MediaAudioModelId
+
+```ts
+type MediaAudioModelId = z.output<typeof mediaAudioModelIdSchema>;
+```
+
+Verified audio model identifier.
+
+---
+
+### MediaAudioVoice
+
+```ts
+type MediaAudioVoice = z.output<typeof mediaAudioVoiceSchema>;
+```
+
+One premade speech voice.
+
+---
+
+### MediaAudioModel
+
+```ts
+type MediaAudioModel = z.output<typeof mediaAudioSchema>;
+```
+
+Immutable audio capability and price metadata.
+
+---
+
 ### MediaModelInput
 
 ```ts
@@ -603,7 +692,45 @@ type MediaCatalogue = readonly MediaCatalogueModel[];
 
 One provider's model list: the typed bounds every request is checked against.
 
+---
+
+### MediaPictureModel
+
+```ts
+type MediaPictureModel = Omit<MediaModel, "kind" | "audio"> & object;
+```
+
+A catalog entry that is a picture or video model.
+
+#### Type Declaration
+
+| Name    | Type                   | Description                                   |
+| ------- | ---------------------- | --------------------------------------------- |
+| `kind`  | `"image"` \| `"video"` | Still-image or video generation; never audio. |
+| `audio` | `null`                 | Always null for a picture or video model.     |
+
 ## Variables
+
+### MAX\_AUDIO\_REFERENCE\_BYTES
+
+```ts
+const MAX_AUDIO_REFERENCE_BYTES: number;
+```
+
+Decoded bytes of one reference clip: well past 30 seconds of any admitted
+container.
+
+---
+
+### MAX\_AUDIO\_REFERENCE\_BODY\_BYTES
+
+```ts
+const MAX_AUDIO_REFERENCE_BODY_BYTES: number;
+```
+
+Decoded bytes across every clip of one request; base64 adds a third.
+
+---
 
 ### mediaFailureStageSchema
 
@@ -690,6 +817,17 @@ Maximum retained still-image output bytes.
 
 ---
 
+### MAX\_AUDIO\_REFERENCE\_COUNT
+
+```ts
+const MAX_AUDIO_REFERENCE_COUNT: 10 = 10;
+```
+
+Schema ceiling for audio reference lists; each model's own `audioReferences.max`
+is enforced after parsing.
+
+---
+
 ### mediaGenerationSettingsSchema
 
 ```ts
@@ -697,10 +835,11 @@ const mediaGenerationSettingsSchema: ZodObject<
   {
     model: ZodString;
     prompt: ZodString;
-    width: ZodNumber;
-    height: ZodNumber;
+    width: ZodOptional<ZodNumber>;
+    height: ZodOptional<ZodNumber>;
     steps: ZodOptional<ZodNumber>;
     durationSeconds: ZodOptional<ZodNumber>;
+    voiceId: ZodOptional<ZodString>;
     resolution: ZodOptional<
       ZodEnum<{
         p480: "480p";
@@ -740,6 +879,17 @@ const mediaGenerationSettingsSchema: ZodObject<
         >
       >
     >;
+    audioReferences: ZodOptional<
+      ZodArray<
+        ZodObject<
+          {
+            computerId: ZodString;
+            path: ZodString;
+          },
+          $strict
+        >
+      >
+    >;
   },
   $strict
 >;
@@ -756,10 +906,11 @@ const mediaGenerationSelectionSchema: ZodObject<
   {
     model: ZodString;
     prompt: ZodString;
-    width: ZodNumber;
-    height: ZodNumber;
+    width: ZodOptional<ZodNumber>;
+    height: ZodOptional<ZodNumber>;
     steps: ZodOptional<ZodNumber>;
     durationSeconds: ZodOptional<ZodNumber>;
+    voiceId: ZodOptional<ZodString>;
     resolution: ZodOptional<
       ZodEnum<{
         p480: "480p";
@@ -799,6 +950,17 @@ const mediaGenerationSelectionSchema: ZodObject<
         >
       >
     >;
+    audioReferences: ZodOptional<
+      ZodArray<
+        ZodObject<
+          {
+            computerId: ZodOptional<ZodString>;
+            path: ZodString;
+          },
+          $strict
+        >
+      >
+    >;
   },
   $strict
 >;
@@ -827,6 +989,23 @@ const mediaVideoReferenceSchema: ZodLazy<
 ```
 
 Path-only video reference; the host supplies authority and reads its bytes.
+
+---
+
+### mediaAudioReferenceSelectionSchema
+
+```ts
+const mediaAudioReferenceSelectionSchema: ZodLazy<
+  ZodObject<
+    {
+      path: ZodString;
+    },
+    $strict
+  >
+>;
+```
+
+Path-only audio reference; the host supplies authority and reads its bytes.
 
 ---
 
@@ -885,6 +1064,18 @@ const mediaVideoSelectionSchema: ZodLazy<
           >
         >
       >;
+      audioReferences: ZodOptional<
+        ZodArray<
+          ZodLazy<
+            ZodObject<
+              {
+                path: ZodString;
+              },
+              $strict
+            >
+          >
+        >
+      >;
     },
     $strict
   >
@@ -893,6 +1084,31 @@ const mediaVideoSelectionSchema: ZodLazy<
 
 Neutral video selection; model-specific combinations are checked by
 validateMediaVideoSelection.
+
+---
+
+### mediaAudioSelectionSchema
+
+```ts
+const mediaAudioSelectionSchema: ZodLazy<
+  ZodObject<
+    {
+      model: ZodEnum<{
+        multilingual: "elevenlabs/eleven-multilingual-v2";
+        v3: "elevenlabs/eleven-v3";
+        music: "elevenlabs/music-v2";
+      }>;
+      prompt: ZodString;
+      voiceId: ZodOptional<ZodString>;
+      durationSeconds: ZodOptional<ZodNumber>;
+    },
+    $strict
+  >
+>;
+```
+
+Neutral audio selection: speech takes a voice, music a length; model-specific
+limits are checked by validateMediaGenerationSettings.
 
 ---
 
@@ -983,7 +1199,8 @@ const mediaModelInputSchema: ZodLazy<
 >;
 ```
 
-Media's provider catalog: Workers AI images plus gateway image and video models.
+Media's provider catalog: Workers AI images plus gateway image, video and audio
+models.
 
 ---
 
@@ -1150,6 +1367,10 @@ const mediaVideoSchema: ZodLazy<ZodReadonly<ZodObject<{
      p1080: "1080p";
      p4k: "4k";
   }>>>;
+  audioReferences: ZodNullable<ZodReadonly<ZodObject<{
+     max: ZodNumber;
+     totalSeconds: ZodNumber;
+  }, $strict>>>;
   prices: ZodReadonly<ZodArray<ZodReadonly<ZodObject<{
      resolution: ZodEnum<{
         p480: ...;
@@ -1165,6 +1386,107 @@ const mediaVideoSchema: ZodLazy<ZodReadonly<ZodObject<{
 ```
 
 Verified video parameters and provider costs, checked 2026-10-11.
+
+---
+
+### mediaAudioModelIdSchema
+
+```ts
+const mediaAudioModelIdSchema: ZodEnum<{
+  multilingual: "elevenlabs/eleven-multilingual-v2";
+  v3: "elevenlabs/eleven-v3";
+  music: "elevenlabs/music-v2";
+}>;
+```
+
+Verified ElevenLabs model identifiers on Cloudflare's Unified Billing, from the
+model pages under https://developers.cloudflare.com/ai/models/elevenlabs/
+(checked 2026-11-13). Cloudflare offers no sound-effects model. Eleven Flash
+v2.5 and Turbo v2.5 are listed there but a live Unified Billing call to Flash
+answered 403 code 2047 ("not available via unified billing. Please use BYOK"),
+so they are not offered. Multilingual v2 is the default voice model.
+
+---
+
+### mediaAudioVoiceSchema
+
+```ts
+const mediaAudioVoiceSchema: ZodLazy<
+  ZodReadonly<
+    ZodObject<
+      {
+        id: ZodString;
+        label: ZodString;
+      },
+      $strict
+    >
+  >
+>;
+```
+
+One premade voice a speech model may speak with.
+
+---
+
+### mediaAudioSchema
+
+```ts
+const mediaAudioSchema: ZodLazy<
+  ZodReadonly<
+    ZodObject<
+      {
+        provider: ZodLiteral<"elevenlabs">;
+        mode: ZodEnum<{
+          speech: "speech";
+          music: "music";
+        }>;
+        voices: ZodReadonly<
+          ZodArray<
+            ZodLazy<
+              ZodReadonly<
+                ZodObject<
+                  {
+                    id: ZodString;
+                    label: ZodString;
+                  },
+                  $strict
+                >
+              >
+            >
+          >
+        >;
+        defaultVoiceId: ZodNullable<ZodString>;
+        seconds: ZodNullable<
+          ZodReadonly<
+            ZodObject<
+              {
+                min: ZodNumber;
+                max: ZodNumber;
+                default: ZodNumber;
+              },
+              $strict
+            >
+          >
+        >;
+        milliunitsPerUnit: ZodNumber;
+      },
+      $strict
+    >
+  >
+>;
+```
+
+Verified audio parameters and provider cost, checked 2026-11-13.
+
+---
+
+### AUDIO\_CHARACTER\_BLOCK
+
+```ts
+const AUDIO_CHARACTER_BLOCK: 100 = 100;
+```
+
+Characters one speech billing block covers.
 
 ---
 
@@ -1188,6 +1510,7 @@ const mediaModelSchema: ZodReadonly<ZodObject<{
   kind: ZodEnum<{
      image: "image";
      video: "video";
+     audio: "audio";
   }>;
   tier: ZodEnum<{
      draft: "draft";
@@ -1262,7 +1585,19 @@ const mediaModelSchema: ZodReadonly<ZodObject<{
      referenceRoles: ZodReadonly<ZodArray<ZodEnum<...>>>;
      maxReferenceImages: ZodNumber;
      referenceResolutions: ZodReadonly<ZodArray<ZodEnum<...>>>;
+     audioReferences: ZodNullable<ZodReadonly<ZodObject<..., ...>>>;
      prices: ZodReadonly<ZodArray<ZodReadonly<...>>>;
+  }, $strict>>>>;
+  audio: ZodNullable<ZodLazy<ZodReadonly<ZodObject<{
+     provider: ZodLiteral<"elevenlabs">;
+     mode: ZodEnum<{
+        speech: "speech";
+        music: "music";
+     }>;
+     voices: ZodReadonly<ZodArray<ZodLazy<...>>>;
+     defaultVoiceId: ZodNullable<ZodString>;
+     seconds: ZodNullable<ZodReadonly<ZodObject<..., ...>>>;
+     milliunitsPerUnit: ZodNumber;
   }, $strict>>>>;
 }, $strict>>;
 ```
@@ -1277,7 +1612,7 @@ Public wire grammar for a catalog entry returned by the Media owner.
 const mediaModels: readonly MediaModel[] = models;
 ```
 
-The Fungi gateway provider's own immutable image and video model catalog.
+The Fungi gateway provider's own immutable image, video and audio model catalog.
 
 ---
 
@@ -1290,6 +1625,7 @@ const mediaCatalogueModelSchema: ZodReadonly<ZodObject<{
   kind: ZodEnum<{
      image: "image";
      video: "video";
+     audio: "audio";
   }>;
   tier: ZodEnum<{
      draft: "draft";
@@ -1332,6 +1668,17 @@ const mediaCatalogueModelSchema: ZodReadonly<ZodObject<{
      }>;
   }, $strict>>>;
   sizes: ZodNullable<ZodReadonly<ZodArray<ZodString>>>;
+  audio: ZodDefault<ZodNullable<ZodReadonly<ZodObject<{
+     provider: ZodLiteral<"elevenlabs">;
+     mode: ZodEnum<{
+        speech: "speech";
+        music: "music";
+     }>;
+     voices: ZodReadonly<ZodArray<ZodLazy<...>>>;
+     defaultVoiceId: ZodNullable<ZodString>;
+     seconds: ZodNullable<ZodReadonly<ZodObject<..., ...>>>;
+     milliunitsPerUnit: ZodNumber;
+  }, $strict>>>>;
   video: ZodNullable<ZodReadonly<ZodObject<{
      minSeconds: ZodNumber;
      maxSeconds: ZodNumber;
@@ -1370,6 +1717,7 @@ const mediaCatalogueModelSchema: ZodReadonly<ZodObject<{
         p4k: ...;
      }>>>;
      prices: ZodReadonly<ZodArray<ZodReadonly<ZodObject<..., ...>>>>;
+     audioReferences: ZodDefault<ZodNullable<ZodReadonly<ZodObject<..., ...>>>>;
      provider: ZodEnum<{
         seedance: "seedance";
         veo: "veo";
@@ -1395,6 +1743,7 @@ const mediaCatalogueSchema: ZodPipe<ZodArray<ZodReadonly<ZodObject<{
   kind: ZodEnum<{
      image: "image";
      video: "video";
+     audio: "audio";
   }>;
   tier: ZodEnum<{
      draft: "draft";
@@ -1437,6 +1786,14 @@ const mediaCatalogueSchema: ZodPipe<ZodArray<ZodReadonly<ZodObject<{
      }>;
   }, $strict>>>;
   sizes: ZodNullable<ZodReadonly<ZodArray<ZodString>>>;
+  audio: ZodDefault<ZodNullable<ZodReadonly<ZodObject<{
+     provider: ZodLiteral<...>;
+     mode: ZodEnum<...>;
+     voices: ZodReadonly<...>;
+     defaultVoiceId: ZodNullable<...>;
+     seconds: ZodNullable<...>;
+     milliunitsPerUnit: ZodNumber;
+  }, $strict>>>>;
   video: ZodNullable<ZodReadonly<ZodObject<{
      minSeconds: ZodNumber;
      maxSeconds: ZodNumber;
@@ -1465,6 +1822,7 @@ const mediaCatalogueSchema: ZodPipe<ZodArray<ZodReadonly<ZodObject<{
      maxReferenceImages: ZodNumber;
      referenceResolutions: ZodReadonly<ZodArray<...>>;
      prices: ZodReadonly<ZodArray<...>>;
+     audioReferences: ZodDefault<ZodNullable<...>>;
      provider: ZodEnum<{
         seedance: ...;
         veo: ...;
@@ -1475,7 +1833,7 @@ const mediaCatalogueSchema: ZodPipe<ZodArray<ZodReadonly<ZodObject<{
 }, $strict>>>, ZodTransform<MediaCatalogue, Readonly<{
   id: string;
   label: string;
-  kind: "image" | "video";
+  kind: "image" | "video" | "audio";
   tier: "draft" | "balanced" | "premium" | "max";
   outputFormats: readonly ("png" | "jpeg" | "webp")[];
   maxPromptLength: number;
@@ -1495,6 +1853,23 @@ const mediaCatalogueSchema: ZodPipe<ZodArray<ZodReadonly<ZodObject<{
      referenceFormat: "png" | "webp";
   }>;
   sizes: readonly string[] | null;
+  audio:   | Readonly<{
+     provider: "elevenlabs";
+     mode: "music" | "speech";
+     voices: readonly Readonly<{
+        id: ...;
+        label: ...;
+     }>[];
+     defaultVoiceId: string | null;
+     seconds:   | Readonly<{
+        min: ...;
+        max: ...;
+        default: ...;
+      }>
+        | null;
+     milliunitsPerUnit: number;
+   }>
+     | null;
   video:   | Readonly<{
      minSeconds: number;
      maxSeconds: number;
@@ -1518,6 +1893,11 @@ const mediaCatalogueSchema: ZodPipe<ZodArray<ZodReadonly<ZodObject<{
         silentMilliunitsPerSecond: ...;
         audioMilliunitsPerSecond: ...;
      }>[];
+     audioReferences:   | Readonly<{
+        max: ...;
+        totalSeconds: ...;
+      }>
+        | null;
      provider: "seedance" | "veo" | "minimax" | "host";
    }>
      | null;
@@ -1583,6 +1963,40 @@ Quote the same estimate in milliunits (1 cent = 1,000 milliunits).
 
 ---
 
+### mediaSettingsInput()
+
+```ts
+function mediaSettingsInput(settings): object;
+```
+
+Mutable caller input for already-normalized settings, so they can be validated
+again.
+
+#### Parameters
+
+| Parameter  | Type                                                  |
+| ---------- | ----------------------------------------------------- |
+| `settings` | [`MediaGenerationSettings`](#mediagenerationsettings) |
+
+#### Returns
+
+| Name               | Type                                                                          | Description                                                                                 |
+| ------------------ | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `model`            | `string`                                                                      | Provider catalog model identifier.                                                          |
+| `prompt`           | `string`                                                                      | Generation prompt; each model's `maxPromptLength` is enforced on top of this ceiling.       |
+| `width?`           | `number`                                                                      | Requested image width or nominal video selector; absent for audio.                          |
+| `height?`          | `number`                                                                      | Requested image height or nominal video selector; absent for audio.                         |
+| `steps?`           | `number`                                                                      | Model-specific inference step count.                                                        |
+| `durationSeconds?` | `number`                                                                      | Requested video or music length in whole seconds.                                           |
+| `voiceId?`         | `string`                                                                      | Speech models only: a premade voice from the catalog; the default when omitted.             |
+| `resolution?`      | `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`                       | Video resolution; must match the nominal width/height selector.                             |
+| `aspectRatio?`     | `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"` | Video aspect; must match the nominal width/height selector.                                 |
+| `generateAudio?`   | `boolean`                                                                     | Video audio selection.                                                                      |
+| `references?`      | `object`[]                                                                    | Host-authorized reference images.                                                           |
+| `audioReferences?` | `object`[]                                                                    | Host-authorized reference audio clips; only a model declaring `audioReferences` takes them. |
+
+---
+
 ### validateMediaGenerationSettings()
 
 ```ts
@@ -1597,20 +2011,22 @@ Validate caller settings against `catalogue`, the active provider's model list
 
 #### Parameters
 
-| Parameter              | Type                                                                                                                                                                                                                                                                                                                                                                 | Default value | Description                                                                           |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------------------------- |
-| `raw`                  | \{ `model`: `string`; `prompt`: `string`; `width`: `number`; `height`: `number`; `steps?`: `number`; `durationSeconds?`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; \} | `undefined`   | -                                                                                     |
-| `raw.model`            | `string`                                                                                                                                                                                                                                                                                                                                                             | `...`         | Provider catalog model identifier.                                                    |
-| `raw.prompt`           | `string`                                                                                                                                                                                                                                                                                                                                                             | `...`         | Generation prompt; each model's `maxPromptLength` is enforced on top of this ceiling. |
-| `raw.width`            | `number`                                                                                                                                                                                                                                                                                                                                                             | `...`         | Requested image width or nominal video selector, not decoded MP4 dimensions.          |
-| `raw.height`           | `number`                                                                                                                                                                                                                                                                                                                                                             | `...`         | Requested image height or nominal video selector, not decoded MP4 dimensions.         |
-| `raw.steps?`           | `number`                                                                                                                                                                                                                                                                                                                                                             | `...`         | Model-specific inference step count.                                                  |
-| `raw.durationSeconds?` | `number`                                                                                                                                                                                                                                                                                                                                                             | `...`         | Requested video length in whole seconds.                                              |
-| `raw.resolution?`      | `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`                                                                                                                                                                                                                                                                                                              | `...`         | Video resolution; must match the nominal width/height selector.                       |
-| `raw.aspectRatio?`     | `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`                                                                                                                                                                                                                                                                                        | `...`         | Video aspect; must match the nominal width/height selector.                           |
-| `raw.generateAudio?`   | `boolean`                                                                                                                                                                                                                                                                                                                                                            | `...`         | Video audio selection.                                                                |
-| `raw.references?`      | `object`[]                                                                                                                                                                                                                                                                                                                                                           | `...`         | Host-authorized reference images.                                                     |
-| `catalogue`            | [`MediaCatalogue`](#mediacatalogue)                                                                                                                                                                                                                                                                                                                                  | `mediaModels` | -                                                                                     |
+| Parameter              | Type                                                                                                                                                                                                                                                                                                                                                                                                                         | Default value | Description                                                                                 |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------------------------------- |
+| `raw`                  | \{ `model`: `string`; `prompt`: `string`; `width?`: `number`; `height?`: `number`; `steps?`: `number`; `durationSeconds?`: `number`; `voiceId?`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; `audioReferences?`: `object`[]; \} | `undefined`   | -                                                                                           |
+| `raw.model`            | `string`                                                                                                                                                                                                                                                                                                                                                                                                                     | `...`         | Provider catalog model identifier.                                                          |
+| `raw.prompt`           | `string`                                                                                                                                                                                                                                                                                                                                                                                                                     | `...`         | Generation prompt; each model's `maxPromptLength` is enforced on top of this ceiling.       |
+| `raw.width?`           | `number`                                                                                                                                                                                                                                                                                                                                                                                                                     | `...`         | Requested image width or nominal video selector; absent for audio.                          |
+| `raw.height?`          | `number`                                                                                                                                                                                                                                                                                                                                                                                                                     | `...`         | Requested image height or nominal video selector; absent for audio.                         |
+| `raw.steps?`           | `number`                                                                                                                                                                                                                                                                                                                                                                                                                     | `...`         | Model-specific inference step count.                                                        |
+| `raw.durationSeconds?` | `number`                                                                                                                                                                                                                                                                                                                                                                                                                     | `...`         | Requested video or music length in whole seconds.                                           |
+| `raw.voiceId?`         | `string`                                                                                                                                                                                                                                                                                                                                                                                                                     | `...`         | Speech models only: a premade voice from the catalog; the default when omitted.             |
+| `raw.resolution?`      | `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`                                                                                                                                                                                                                                                                                                                                                                      | `...`         | Video resolution; must match the nominal width/height selector.                             |
+| `raw.aspectRatio?`     | `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`                                                                                                                                                                                                                                                                                                                                                | `...`         | Video aspect; must match the nominal width/height selector.                                 |
+| `raw.generateAudio?`   | `boolean`                                                                                                                                                                                                                                                                                                                                                                                                                    | `...`         | Video audio selection.                                                                      |
+| `raw.references?`      | `object`[]                                                                                                                                                                                                                                                                                                                                                                                                                   | `...`         | Host-authorized reference images.                                                           |
+| `raw.audioReferences?` | `object`[]                                                                                                                                                                                                                                                                                                                                                                                                                   | `...`         | Host-authorized reference audio clips; only a model declaring `audioReferences` takes them. |
+| `catalogue`            | [`MediaCatalogue`](#mediacatalogue)                                                                                                                                                                                                                                                                                                                                                                                          | `mediaModels` | -                                                                                           |
 
 #### Returns
 
@@ -1624,32 +2040,36 @@ Validate caller settings against `catalogue`, the active provider's model list
 function validateMediaGenerationSelection(
   raw,
   catalogue?,
-): Readonly<Omit<MediaGenerationSettings, "references"> & object>;
+): Readonly<
+  Omit<MediaGenerationSettings, "references" | "audioReferences"> & object
+>;
 ```
 
 Validate selections without granting Computer authority.
 
 #### Parameters
 
-| Parameter              | Type                                                                                                                                                                                                                                                                                                                                                                 | Default value | Description                                                                           |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------------------------- |
-| `raw`                  | \{ `model`: `string`; `prompt`: `string`; `width`: `number`; `height`: `number`; `steps?`: `number`; `durationSeconds?`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; \} | `undefined`   | -                                                                                     |
-| `raw.model`            | `string`                                                                                                                                                                                                                                                                                                                                                             | `...`         | Provider catalog model identifier.                                                    |
-| `raw.prompt`           | `string`                                                                                                                                                                                                                                                                                                                                                             | `...`         | Generation prompt; each model's `maxPromptLength` is enforced on top of this ceiling. |
-| `raw.width`            | `number`                                                                                                                                                                                                                                                                                                                                                             | `...`         | Requested image width or nominal video selector, not decoded MP4 dimensions.          |
-| `raw.height`           | `number`                                                                                                                                                                                                                                                                                                                                                             | `...`         | Requested image height or nominal video selector, not decoded MP4 dimensions.         |
-| `raw.steps?`           | `number`                                                                                                                                                                                                                                                                                                                                                             | `...`         | Model-specific inference step count.                                                  |
-| `raw.durationSeconds?` | `number`                                                                                                                                                                                                                                                                                                                                                             | `...`         | Requested video length in whole seconds.                                              |
-| `raw.resolution?`      | `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`                                                                                                                                                                                                                                                                                                              | `...`         | Video resolution; must match the nominal width/height selector.                       |
-| `raw.aspectRatio?`     | `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`                                                                                                                                                                                                                                                                                        | `...`         | Video aspect; must match the nominal width/height selector.                           |
-| `raw.generateAudio?`   | `boolean`                                                                                                                                                                                                                                                                                                                                                            | `...`         | Video audio selection.                                                                |
-| `raw.references?`      | `object`[]                                                                                                                                                                                                                                                                                                                                                           | `...`         | Host-authorized reference images.                                                     |
-| `catalogue`            | [`MediaCatalogue`](#mediacatalogue)                                                                                                                                                                                                                                                                                                                                  | `mediaModels` | -                                                                                     |
+| Parameter              | Type                                                                                                                                                                                                                                                                                                                                                                                                                         | Default value | Description                                                                           |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------------------------- |
+| `raw`                  | \{ `model`: `string`; `prompt`: `string`; `width?`: `number`; `height?`: `number`; `steps?`: `number`; `durationSeconds?`: `number`; `voiceId?`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; `audioReferences?`: `object`[]; \} | `undefined`   | -                                                                                     |
+| `raw.model`            | `string`                                                                                                                                                                                                                                                                                                                                                                                                                     | `...`         | Provider catalog model identifier.                                                    |
+| `raw.prompt`           | `string`                                                                                                                                                                                                                                                                                                                                                                                                                     | `...`         | Generation prompt; each model's `maxPromptLength` is enforced on top of this ceiling. |
+| `raw.width?`           | `number`                                                                                                                                                                                                                                                                                                                                                                                                                     | `...`         | Requested image width or nominal video selector; absent for audio.                    |
+| `raw.height?`          | `number`                                                                                                                                                                                                                                                                                                                                                                                                                     | `...`         | Requested image height or nominal video selector; absent for audio.                   |
+| `raw.steps?`           | `number`                                                                                                                                                                                                                                                                                                                                                                                                                     | `...`         | Model-specific inference step count.                                                  |
+| `raw.durationSeconds?` | `number`                                                                                                                                                                                                                                                                                                                                                                                                                     | `...`         | Requested video or music length in whole seconds.                                     |
+| `raw.voiceId?`         | `string`                                                                                                                                                                                                                                                                                                                                                                                                                     | `...`         | Speech models only: a premade voice from the catalog; the default when omitted.       |
+| `raw.resolution?`      | `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`                                                                                                                                                                                                                                                                                                                                                                      | `...`         | Video resolution; must match the nominal width/height selector.                       |
+| `raw.aspectRatio?`     | `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`                                                                                                                                                                                                                                                                                                                                                | `...`         | Video aspect; must match the nominal width/height selector.                           |
+| `raw.generateAudio?`   | `boolean`                                                                                                                                                                                                                                                                                                                                                                                                                    | `...`         | Video audio selection.                                                                |
+| `raw.references?`      | `object`[]                                                                                                                                                                                                                                                                                                                                                                                                                   | `...`         | Host-authorized reference images.                                                     |
+| `raw.audioReferences?` | `object`[]                                                                                                                                                                                                                                                                                                                                                                                                                   | `...`         | Host-authorized reference audio clips.                                                |
+| `catalogue`            | [`MediaCatalogue`](#mediacatalogue)                                                                                                                                                                                                                                                                                                                                                                                          | `mediaModels` | -                                                                                     |
 
 #### Returns
 
 `Readonly`\<`Omit`\<[`MediaGenerationSettings`](#mediagenerationsettings),
-`"references"`\> & `object`\>
+`"references"` \| `"audioReferences"`\> & `object`\>
 
 ---
 
@@ -1664,17 +2084,18 @@ or billing admission.
 
 #### Parameters
 
-| Parameter              | Type                                                                                                                                                                                                                                                                                                      | Default value | Description                                                                                                                         |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `raw`                  | \{ `prompt`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `durationSeconds?`: `number`; `generateAudio?`: `boolean`; `references?`: `object`[]; `model`: `string`; \} | `undefined`   | -                                                                                                                                   |
-| `raw.prompt`           | `string`                                                                                                                                                                                                                                                                                                  | `...`         | Trimmed prompt; the selected model's `maxPromptLength` is enforced on top of this ceiling.                                          |
-| `raw.resolution?`      | `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`                                                                                                                                                                                                                                                   | `...`         | Model-specific resolution, default 720p.                                                                                            |
-| `raw.aspectRatio?`     | `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`                                                                                                                                                                                                                             | `...`         | Model-specific aspect, default 16:9.                                                                                                |
-| `raw.durationSeconds?` | `number`                                                                                                                                                                                                                                                                                                  | `...`         | Whole seconds; Seedance 2.0 4–12, Seedance 2.5 4–30, Veo exactly 4/6/8, MiniMax H3 Max 5–15.                                        |
-| `raw.generateAudio?`   | `boolean`                                                                                                                                                                                                                                                                                                 | `...`         | Veo defaults true; Seedance omits the provider option when unset; MiniMax H3 Max has no audio field and refuses an explicit choice. |
-| `raw.references?`      | `object`[]                                                                                                                                                                                                                                                                                                | `...`         | Up to four references, with provider-specific roles and mode limits.                                                                |
-| `raw.model`            | `string`                                                                                                                                                                                                                                                                                                  | `...`         | -                                                                                                                                   |
-| `catalogue`            | [`MediaCatalogue`](#mediacatalogue)                                                                                                                                                                                                                                                                       | `mediaModels` | -                                                                                                                                   |
+| Parameter              | Type                                                                                                                                                                                                                                                                                                                                      | Default value | Description                                                                                                                         |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `raw`                  | \{ `prompt`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `durationSeconds?`: `number`; `generateAudio?`: `boolean`; `references?`: `object`[]; `audioReferences?`: `object`[]; `model`: `string`; \} | `undefined`   | -                                                                                                                                   |
+| `raw.prompt`           | `string`                                                                                                                                                                                                                                                                                                                                  | `...`         | Trimmed prompt; the selected model's `maxPromptLength` is enforced on top of this ceiling.                                          |
+| `raw.resolution?`      | `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`                                                                                                                                                                                                                                                                                   | `...`         | Model-specific resolution, default 720p.                                                                                            |
+| `raw.aspectRatio?`     | `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`                                                                                                                                                                                                                                                             | `...`         | Model-specific aspect, default 16:9.                                                                                                |
+| `raw.durationSeconds?` | `number`                                                                                                                                                                                                                                                                                                                                  | `...`         | Whole seconds; Seedance 2.0 4–12, Seedance 2.5 4–30, Veo exactly 4/6/8, MiniMax H3 Max 5–15.                                        |
+| `raw.generateAudio?`   | `boolean`                                                                                                                                                                                                                                                                                                                                 | `...`         | Veo defaults true; Seedance omits the provider option when unset; MiniMax H3 Max has no audio field and refuses an explicit choice. |
+| `raw.references?`      | `object`[]                                                                                                                                                                                                                                                                                                                                | `...`         | Up to four references, with provider-specific roles and mode limits.                                                                |
+| `raw.audioReferences?` | `object`[]                                                                                                                                                                                                                                                                                                                                | `...`         | Reference audio clips, for a model declaring `audioReferences` (Seedance 2.5: 10 clips, 30 seconds).                                |
+| `raw.model`            | `string`                                                                                                                                                                                                                                                                                                                                  | `...`         | -                                                                                                                                   |
+| `catalogue`            | [`MediaCatalogue`](#mediacatalogue)                                                                                                                                                                                                                                                                                                       | `mediaModels` | -                                                                                                                                   |
 
 #### Returns
 
@@ -1863,7 +2284,7 @@ first problem.
 function listMediaModels(): readonly Readonly<{
   id: string;
   label: string;
-  kind: "image" | "video";
+  kind: "image" | "video" | "audio";
   tier: "draft" | "balanced" | "premium" | "max";
   outputFormats: readonly ("png" | "jpeg" | "webp")[];
   maxPromptLength: number;
@@ -1905,11 +2326,30 @@ function listMediaModels(): readonly Readonly<{
     referenceResolutions: readonly (
       "480p" | "720p" | "768p" | "1080p" | "4k"
     )[];
+    audioReferences: Readonly<{
+      max: number;
+      totalSeconds: number;
+    }> | null;
     prices: readonly Readonly<{
       resolution: "480p" | "720p" | "768p" | "1080p" | "4k";
       silentMilliunitsPerSecond: number;
       audioMilliunitsPerSecond: number;
     }>[];
+  }> | null;
+  audio: Readonly<{
+    provider: "elevenlabs";
+    mode: "music" | "speech";
+    voices: readonly Readonly<{
+      id: string;
+      label: string;
+    }>[];
+    defaultVoiceId: string | null;
+    seconds: Readonly<{
+      min: number;
+      max: number;
+      default: number;
+    }> | null;
+    milliunitsPerUnit: number;
   }> | null;
 }>[];
 ```
@@ -1919,8 +2359,8 @@ List the gateway provider's models in catalog order.
 #### Returns
 
 readonly `Readonly`\<\{ `id`: `string`; `label`: `string`; `kind`: `"image"` \|
-`"video"`; `tier`: `"draft"` \| `"balanced"` \| `"premium"` \| `"max"`;
-`outputFormats`: readonly (`"png"` \| `"jpeg"` \| `"webp"`)[];
+`"video"` \| `"audio"`; `tier`: `"draft"` \| `"balanced"` \| `"premium"` \|
+`"max"`; `outputFormats`: readonly (`"png"` \| `"jpeg"` \| `"webp"`)[];
 `maxPromptLength`: `number`; `input`: `Readonly`\<\{ `transport`: `"json"` \|
 `"multipart"`; `dimensions`: `"none"` \| `"own"`; `maxDimension`: `number` \|
 `null`; `maxDimensionDocumented`: `boolean`; `defaultWidth`: `number`;
@@ -1940,10 +2380,33 @@ readonly `Readonly`\<\{ `id`: `string`; `label`: `string`; `kind`: `"image"` \|
 `boolean`; `defaultGenerateAudio`: `boolean` \| `null`; `referenceRoles`:
 readonly (`"first-frame"` \| `"last-frame"` \| `"reference"`)[];
 `maxReferenceImages`: `number`; `referenceResolutions`: readonly (`"480p"` \|
-`"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`)[]; `prices`: readonly
-`Readonly`\<\{ `resolution`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \|
-`"4k"`; `silentMilliunitsPerSecond`: `number`; `audioMilliunitsPerSecond`:
-`number`; \}\>[]; \}\> \| `null`; \}\>[]
+`"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`)[]; `audioReferences`: \|
+`Readonly`\<\{ `max`: `number`; `totalSeconds`: `number`; \}\> \| `null`;
+`prices`: readonly `Readonly`\<\{ `resolution`: `"480p"` \| `"720p"` \| `"768p"`
+\| `"1080p"` \| `"4k"`; `silentMilliunitsPerSecond`: `number`;
+`audioMilliunitsPerSecond`: `number`; \}\>[]; \}\> \| `null`; `audio`: \|
+`Readonly`\<\{ `provider`: `"elevenlabs"`; `mode`: `"music"` \| `"speech"`;
+`voices`: readonly `Readonly`\<\{ `id`: `string`; `label`: `string`; \}\>[];
+`defaultVoiceId`: `string` \| `null`; `seconds`: \| `Readonly`\<\{ `min`:
+`number`; `max`: `number`; `default`: `number`; \}\> \| `null`;
+`milliunitsPerUnit`: `number`; \}\> \| `null`; \}\>[]
+
+---
+
+### listPictureMediaModels()
+
+```ts
+function listPictureMediaModels(): readonly MediaPictureModel[];
+```
+
+The gateway models Apps and browsers list and pick from: pictures and video. The
+Agar and Prints catalog decoders know no `audio` kind yet, and one unknown row
+fails the whole list, so audio models are generated by id until the Prints audio
+UI lands and lists them.
+
+#### Returns
+
+readonly [`MediaPictureModel`](#mediapicturemodel)[]
 
 ---
 
@@ -1954,7 +2417,7 @@ function getGatewayModel(id):
   | Readonly<{
       id: string;
       label: string;
-      kind: "image" | "video";
+      kind: "image" | "video" | "audio";
       tier: "draft" | "balanced" | "premium" | "max";
       outputFormats: readonly ("png" | "jpeg" | "webp")[];
       maxPromptLength: number;
@@ -1997,11 +2460,30 @@ function getGatewayModel(id):
         referenceResolutions: readonly (
           "480p" | "720p" | "768p" | "1080p" | "4k"
         )[];
+        audioReferences: Readonly<{
+          max: number;
+          totalSeconds: number;
+        }> | null;
         prices: readonly Readonly<{
           resolution: "480p" | "720p" | "768p" | "1080p" | "4k";
           silentMilliunitsPerSecond: number;
           audioMilliunitsPerSecond: number;
         }>[];
+      }> | null;
+      audio: Readonly<{
+        provider: "elevenlabs";
+        mode: "music" | "speech";
+        voices: readonly Readonly<{
+          id: string;
+          label: string;
+        }>[];
+        defaultVoiceId: string | null;
+        seconds: Readonly<{
+          min: number;
+          max: number;
+          default: number;
+        }> | null;
+        milliunitsPerUnit: number;
       }> | null;
     }>
   | undefined;
@@ -2019,8 +2501,8 @@ sees a custom provider's models.
 #### Returns
 
 \| `Readonly`\<\{ `id`: `string`; `label`: `string`; `kind`: `"image"` \|
-`"video"`; `tier`: `"draft"` \| `"balanced"` \| `"premium"` \| `"max"`;
-`outputFormats`: readonly (`"png"` \| `"jpeg"` \| `"webp"`)[];
+`"video"` \| `"audio"`; `tier`: `"draft"` \| `"balanced"` \| `"premium"` \|
+`"max"`; `outputFormats`: readonly (`"png"` \| `"jpeg"` \| `"webp"`)[];
 `maxPromptLength`: `number`; `input`: `Readonly`\<\{ `transport`: `"json"` \|
 `"multipart"`; `dimensions`: `"none"` \| `"own"`; `maxDimension`: `number` \|
 `null`; `maxDimensionDocumented`: `boolean`; `defaultWidth`: `number`;
@@ -2040,10 +2522,16 @@ sees a custom provider's models.
 `boolean`; `defaultGenerateAudio`: `boolean` \| `null`; `referenceRoles`:
 readonly (`"first-frame"` \| `"last-frame"` \| `"reference"`)[];
 `maxReferenceImages`: `number`; `referenceResolutions`: readonly (`"480p"` \|
-`"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`)[]; `prices`: readonly
-`Readonly`\<\{ `resolution`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \|
-`"4k"`; `silentMilliunitsPerSecond`: `number`; `audioMilliunitsPerSecond`:
-`number`; \}\>[]; \}\> \| `null`; \}\> \| `undefined`
+`"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`)[]; `audioReferences`: \|
+`Readonly`\<\{ `max`: `number`; `totalSeconds`: `number`; \}\> \| `null`;
+`prices`: readonly `Readonly`\<\{ `resolution`: `"480p"` \| `"720p"` \| `"768p"`
+\| `"1080p"` \| `"4k"`; `silentMilliunitsPerSecond`: `number`;
+`audioMilliunitsPerSecond`: `number`; \}\>[]; \}\> \| `null`; `audio`: \|
+`Readonly`\<\{ `provider`: `"elevenlabs"`; `mode`: `"music"` \| `"speech"`;
+`voices`: readonly `Readonly`\<\{ `id`: `string`; `label`: `string`; \}\>[];
+`defaultVoiceId`: `string` \| `null`; `seconds`: \| `Readonly`\<\{ `min`:
+`number`; `max`: `number`; `default`: `number`; \}\> \| `null`;
+`milliunitsPerUnit`: `number`; \}\> \| `null`; \}\> \| `undefined`
 
 ---
 
@@ -2057,7 +2545,7 @@ function getMediaModel(
   | Readonly<{
       id: string;
       label: string;
-      kind: "image" | "video";
+      kind: "image" | "video" | "audio";
       tier: "draft" | "balanced" | "premium" | "max";
       outputFormats: readonly ("png" | "jpeg" | "webp")[];
       maxPromptLength: number;
@@ -2077,6 +2565,21 @@ function getMediaModel(
         referenceFormat: "png" | "webp";
       }>;
       sizes: readonly string[] | null;
+      audio: Readonly<{
+        provider: "elevenlabs";
+        mode: "music" | "speech";
+        voices: readonly Readonly<{
+          id: string;
+          label: string;
+        }>[];
+        defaultVoiceId: string | null;
+        seconds: Readonly<{
+          min: number;
+          max: number;
+          default: number;
+        }> | null;
+        milliunitsPerUnit: number;
+      }> | null;
       video: Readonly<{
         minSeconds: number;
         maxSeconds: number;
@@ -2104,6 +2607,10 @@ function getMediaModel(
           silentMilliunitsPerSecond: number;
           audioMilliunitsPerSecond: number;
         }>[];
+        audioReferences: Readonly<{
+          max: number;
+          totalSeconds: number;
+        }> | null;
         provider: "seedance" | "veo" | "minimax" | "host";
       }> | null;
     }>
@@ -2123,8 +2630,8 @@ absent.
 #### Returns
 
 \| `Readonly`\<\{ `id`: `string`; `label`: `string`; `kind`: `"image"` \|
-`"video"`; `tier`: `"draft"` \| `"balanced"` \| `"premium"` \| `"max"`;
-`outputFormats`: readonly (`"png"` \| `"jpeg"` \| `"webp"`)[];
+`"video"` \| `"audio"`; `tier`: `"draft"` \| `"balanced"` \| `"premium"` \|
+`"max"`; `outputFormats`: readonly (`"png"` \| `"jpeg"` \| `"webp"`)[];
 `maxPromptLength`: `number`; `input`: `Readonly`\<\{ `transport`: `"json"` \|
 `"multipart"`; `dimensions`: `"none"` \| `"own"`; `maxDimension`: `number` \|
 `null`; `maxDimensionDocumented`: `boolean`; `defaultWidth`: `number`;
@@ -2132,9 +2639,14 @@ absent.
 `maxSteps`: `number` \| `null`; `defaultSteps`: `number` \| `null`;
 `referenceField`: `string` \| `null`; `maxReferences`: `number`;
 `referenceDimension`: `number` \| `null`; `referenceFormat`: `"png"` \|
-`"webp"`; \}\>; `sizes`: readonly `string`[] \| `null`; `video`: \|
-`Readonly`\<\{ `minSeconds`: `number`; `maxSeconds`: `number`; `defaultSeconds`:
-`number`; `durations`: readonly `number`[]; `formats`: readonly `Readonly`\<\{
+`"webp"`; \}\>; `sizes`: readonly `string`[] \| `null`; `audio`: \|
+`Readonly`\<\{ `provider`: `"elevenlabs"`; `mode`: `"music"` \| `"speech"`;
+`voices`: readonly `Readonly`\<\{ `id`: `string`; `label`: `string`; \}\>[];
+`defaultVoiceId`: `string` \| `null`; `seconds`: \| `Readonly`\<\{ `min`:
+`number`; `max`: `number`; `default`: `number`; \}\> \| `null`;
+`milliunitsPerUnit`: `number`; \}\> \| `null`; `video`: \| `Readonly`\<\{
+`minSeconds`: `number`; `maxSeconds`: `number`; `defaultSeconds`: `number`;
+`durations`: readonly `number`[]; `formats`: readonly `Readonly`\<\{
 `resolution`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`;
 `aspectRatio`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"`
 \| `"9:21"`; `width`: `number`; `height`: `number`; \}\>[]; `defaultResolution`:
@@ -2146,8 +2658,10 @@ absent.
 readonly (`"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`)[]; `prices`:
 readonly `Readonly`\<\{ `resolution`: `"480p"` \| `"720p"` \| `"768p"` \|
 `"1080p"` \| `"4k"`; `silentMilliunitsPerSecond`: `number`;
-`audioMilliunitsPerSecond`: `number`; \}\>[]; `provider`: `"seedance"` \|
-`"veo"` \| `"minimax"` \| `"host"`; \}\> \| `null`; \}\> \| `undefined`
+`audioMilliunitsPerSecond`: `number`; \}\>[]; `audioReferences`: \|
+`Readonly`\<\{ `max`: `number`; `totalSeconds`: `number`; \}\> \| `null`;
+`provider`: `"seedance"` \| `"veo"` \| `"minimax"` \| `"host"`; \}\> \| `null`;
+\}\> \| `undefined`
 
 ---
 

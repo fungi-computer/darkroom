@@ -7,32 +7,54 @@ import {
 } from "./model-catalog.js";
 import {
   validateMediaGenerationSettings,
+  mediaSettingsInput,
   estimateVideoMilliunits,
+  type MediaAudioReferenceBytes,
   type MediaGenerationSettings,
   type MediaReferenceBytes,
 } from "./index.js";
-import type { MediaVideoModelId } from "./model-catalog.js";
+import type { MediaAudioModelId, MediaVideoModelId } from "./model-catalog.js";
+import { AUDIO_CHARACTER_BLOCK } from "./model-catalog.js";
+import {
+  buildElevenLabsInput,
+  estimateElevenLabsMilliunits,
+} from "./audio-providers/elevenlabs.js";
 import { imageDataUri } from "./video-providers/reference-encoding.js";
 import {
   videoProviderAdapters,
   type CheckedVideoSettings,
 } from "./video-providers/index.js";
 
-/** Gateway images and the verified catalog's video families share Unified billing. */
+/** Gateway images and the verified catalog's video and audio families share Unified billing. */
 export type GatewayModelId =
-  "openai/gpt-image-2" | "bytedance/seedream-5-pro" | MediaVideoModelId;
-export const isGatewayModel = (id: string): id is GatewayModelId =>
-  id === "openai/gpt-image-2" ||
-  id === "bytedance/seedream-5-pro" ||
-  getGatewayModel(id)?.kind === "video";
+  | "openai/gpt-image-2"
+  | "bytedance/seedream-5-pro"
+  | MediaVideoModelId
+  | MediaAudioModelId;
+export const isGatewayModel = (id: string): id is GatewayModelId => {
+  if (id === "openai/gpt-image-2" || id === "bytedance/seedream-5-pro")
+    return true;
+  const kind = getGatewayModel(id)?.kind;
+  return kind === "video" || kind === "audio";
+};
 
-/** What one generation bills: whole images, or seconds of video. */
+/**
+ * What one generation bills: whole images, seconds of video or music, or
+ * blocks of {@link AUDIO_CHARACTER_BLOCK} speech characters (so a per-character
+ * provider rate is marked up once per block, not rounded up per character).
+ */
 export type MediaUnits = Readonly<{
-  /** One image or one whole video second. */
-  unit: "image" | "video_second";
+  /** One image, one whole video or music second, or one speech character block. */
+  unit: "image" | "video_second" | "audio_second" | "audio_character_block";
   /** Number of delivered or admitted units. */
   units: number;
 }>;
+
+/** Re-run the settings grammar over already-normalized settings. */
+const revalidate = (
+  settings: MediaGenerationSettings,
+  catalogue: MediaCatalogue = mediaModels,
+) => validateMediaGenerationSettings(mediaSettingsInput(settings), catalogue);
 
 /** Billing units for validated settings; video bills its requested length. */
 export function mediaUnits(
@@ -43,16 +65,21 @@ export function mediaUnits(
   if (model === undefined)
     throw new MediaSettingsError("billing units require a known Media model");
   if (model.kind === "video") {
-    const checked = validateMediaGenerationSettings(
-      {
-        ...settings,
-        references: settings.references?.map((reference) => ({ ...reference })),
-      },
-      catalogue,
-    );
+    const checked = revalidate(settings, catalogue);
     if (checked.durationSeconds === undefined)
       throw new MediaSettingsError("video settings need a duration");
     return { unit: "video_second", units: checked.durationSeconds };
+  }
+  if (model.kind === "audio") {
+    const checked = revalidate(settings, catalogue);
+    if (model.audio?.mode === "speech")
+      return {
+        unit: "audio_character_block",
+        units: Math.ceil(checked.prompt.length / AUDIO_CHARACTER_BLOCK),
+      };
+    if (checked.durationSeconds === undefined)
+      throw new MediaSettingsError("music settings need a length");
+    return { unit: "audio_second", units: checked.durationSeconds };
   }
   return { unit: "image", units: 1 };
 }
@@ -73,11 +100,11 @@ const gptImageOutputTokens = new Map([
 ]);
 const gptImageTokensPerMegapixel = 1_056 / 1_048_576;
 function gptImageOutputTokenCount(settings: MediaGenerationSettings): number {
+  const { width, height } = settings;
+  if (width === undefined || height === undefined)
+    throw new MediaSettingsError("an image needs a width and a height");
   const known = gptImageOutputTokens.get(sizeOf(settings));
-  return (
-    known ??
-    Math.ceil(settings.width * settings.height * gptImageTokensPerMegapixel)
-  );
+  return known ?? Math.ceil(width * height * gptImageTokensPerMegapixel);
 }
 /**
  * USD per million tokens: text input, image input and image output, as
@@ -144,8 +171,10 @@ export function estimateGatewayMilliunits(
   // image (none are sent); it states no price by size.
   // https://developers.cloudflare.com/ai/models/bytedance/seedream-5-pro/
   if (settings.model === "bytedance/seedream-5-pro") return 4_500;
-  if (getGatewayModel(settings.model)?.kind === "video")
-    return estimateVideoMilliunits(settings);
+  const model = getGatewayModel(settings.model);
+  if (model?.kind === "video") return estimateVideoMilliunits(settings);
+  if (model?.kind === "audio")
+    return estimateElevenLabsMilliunits(revalidate(settings), model);
   throw new MediaSettingsError(`${settings.model} is not a gateway model`);
 }
 
@@ -167,6 +196,7 @@ export function gatewayInput(
   settings: MediaGenerationSettings,
   references: readonly MediaReferenceBytes[] = [],
   outputFormat: "png" | "jpeg" | "webp" = "png",
+  audioReferences: readonly MediaAudioReferenceBytes[] = [],
 ) {
   if (settings.model === "openai/gpt-image-2") {
     const body = {
@@ -194,11 +224,9 @@ export function gatewayInput(
       watermark: false,
     };
   }
-  const checked = validateMediaGenerationSettings({
-    ...settings,
-    references: settings.references?.map((reference) => ({ ...reference })),
-  });
+  const checked = revalidate(settings);
   const model = getGatewayModel(checked.model);
+  if (model?.audio != null) return buildElevenLabsInput(checked, model);
   if (
     model?.video == null ||
     checked.resolution === undefined ||
@@ -210,6 +238,10 @@ export function gatewayInput(
     throw new MediaSettingsError(
       "resolved video references must match every admitted reference",
     );
+  if (audioReferences.length !== (checked.audioReferences?.length ?? 0))
+    throw new MediaSettingsError(
+      "resolved audio references must match every admitted audio reference",
+    );
   const videoSettings: CheckedVideoSettings = {
     ...checked,
     resolution: checked.resolution,
@@ -220,5 +252,6 @@ export function gatewayInput(
     videoSettings,
     references,
     model,
+    audioReferences,
   );
 }

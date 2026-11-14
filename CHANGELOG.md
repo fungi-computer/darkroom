@@ -1,5 +1,31 @@
 # @fungi.computer/darkroom
 
+## 0.8.0
+
+### Minor Changes
+
+- Changes since 0.7.0:
+
+  - fix(darkroom): regenerate server docs and list picture models in the quote
+    test
+  - fix(darkroom): keep audio fields off image settings and repin Trellis to the
+    Prints catalog
+  - fix(darkroom): repair the gate after merging integration
+  - fix(darkroom): repin the Prints catalog and templates, guard optional image
+    sizes
+  - fix(darkroom): drop BYOK-only Eleven Flash and pin the decoder to the live
+    answer
+  - feat(hub-edge): forward audio output and reference clips to the Media
+    provider
+  - feat(darkroom): send Seedance 2.5 reference audio clips
+  - feat(darkroom): generate speech and music through ElevenLabs on Unified
+    Billing
+
+### Patch Changes
+
+- Updated dependencies
+  - @fungi.computer/agar@0.14.0
+
 ## 0.7.0
 
 ### Minor Changes

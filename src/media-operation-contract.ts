@@ -5,7 +5,11 @@ import type {
   MediaOperationRequest,
 } from "./media-operation-owner.js";
 import type { MediaUnits } from "./gateway-models.js";
-import type { MediaCatalogue, MediaReferenceBytes } from "./index.js";
+import type {
+  MediaAudioReferenceBytes,
+  MediaCatalogue,
+  MediaReferenceBytes,
+} from "./index.js";
 
 /**
  * The host's billing owner for Media. Every call is keyed by the durable
@@ -105,6 +109,8 @@ export type MediaExecution = Readonly<{
         costMilliunits: number;
         /** Host-authorized reference images. */
         references: readonly MediaReferenceBytes[];
+        /** Host-authorized reference audio clips, parsed and within the model's budget. */
+        audioReferences: readonly MediaAudioReferenceBytes[];
         /** Dispatch one provider call with the prepared inputs. */
         run: (signal?: AbortSignal) => Promise<
           Readonly<{
@@ -139,11 +145,13 @@ export const mediaResultSchema = z.strictObject({
     webp: "webp",
     /** MP4 video encoding. */
     mp4: "mp4",
+    /** MP3 audio encoding. */
+    mp3: "mp3",
   }),
-  /** Requested image height or nominal video selector, not decoded MP4 dimensions. */
-  height: z.number().int().positive(),
+  /** Requested image height or nominal video selector, not decoded MP4 dimensions; absent for audio. */
+  height: z.number().int().positive().optional(),
   /** Provider catalog model identifier. */
   model: z.string().min(1).max(256),
-  /** Requested image width or nominal video selector, not decoded MP4 dimensions. */
-  width: z.number().int().positive(),
+  /** Requested image width or nominal video selector, not decoded MP4 dimensions; absent for audio. */
+  width: z.number().int().positive().optional(),
 });

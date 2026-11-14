@@ -82,7 +82,12 @@ function execute(
     destination: { authorize: () => Promise.resolve(), write },
     generation: {
       prepare: () =>
-        Promise.resolve({ costMilliunits: 125, references: [], run }),
+        Promise.resolve({
+          costMilliunits: 125,
+          references: [],
+          audioReferences: [],
+          run,
+        }),
     },
   };
   return Effect.runPromise(
@@ -1130,7 +1135,12 @@ describe("MediaOperationOwner internal durable owner", () => {
           destination: { authorize: () => Promise.resolve(), write },
           generation: {
             prepare: () =>
-              Promise.resolve({ costMilliunits: 75_000, references, run }),
+              Promise.resolve({
+                costMilliunits: 75_000,
+                references,
+                audioReferences: [],
+                run,
+              }),
           },
         }),
       );
@@ -1436,7 +1446,12 @@ it("charges a provider format mismatch durably and never redispatches or refunds
     destination: { authorize: () => Promise.resolve(), write },
     generation: {
       prepare: () =>
-        Promise.resolve({ costMilliunits: 125, references: [], run }),
+        Promise.resolve({
+          costMilliunits: 125,
+          references: [],
+          audioReferences: [],
+          run,
+        }),
     },
   };
   try {

@@ -487,7 +487,11 @@ Pin the admitted price and begin the generation lease.
 ##### dispatchInBackground()
 
 ```ts
-dispatchInBackground(leaseId, references): Promise<Readonly<{
+dispatchInBackground(
+   leaseId,
+   references,
+   audioReferences
+): Promise<Readonly<{
   operationId: string;
   requestId: string;
   namespace: string;
@@ -531,10 +535,11 @@ output, and releases the lease so a later retry saves and charges it.
 
 ###### Parameters
 
-| Parameter    | Type                                                                                                                                                                 |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `leaseId`    | `string`                                                                                                                                                             |
-| `references` | readonly `Readonly`\<\{ `bytes`: `Uint8Array`; `format`: [`ImageFormat`](index.md#imageformat); `width`: `number`; `height`: `number`; `filename?`: `string`; \}\>[] |
+| Parameter         | Type                                                                                                                                                                               |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `leaseId`         | `string`                                                                                                                                                                           |
+| `references`      | readonly `Readonly`\<\{ `bytes`: `Uint8Array`; `format`: [`ImageFormat`](index.md#imageformat); `width`: `number`; `height`: `number`; `filename?`: `string`; \}\>[]               |
+| `audioReferences` | readonly `Readonly`\<\{ `bytes`: `Uint8Array`; `mimeType`: [`AudioReferenceMimeType`](index.md#audioreferencemimetype); `durationSeconds`: `number`; `filename?`: `string`; \}\>[] |
 
 ###### Returns
 
@@ -948,12 +953,15 @@ Why the host's billing owner refused to admit a new generation.
 
 ```ts
 type MediaUnits = Readonly<{
-  unit: "image" | "video_second";
+  unit: "image" | "video_second" | "audio_second" | "audio_character_block";
   units: number;
 }>;
 ```
 
-What one generation bills: whole images, or seconds of video.
+What one generation bills: whole images, seconds of video or music, or blocks of
+[AUDIO\_CHARACTER\_BLOCK](index.md#audio_character_block) speech characters (so
+a per-character provider rate is marked up once per block, not rounded up per
+character).
 
 ---
 
@@ -1616,6 +1624,7 @@ type MediaServiceHost = Readonly<{
      authorize: (path) => Promise<void>;
      write: (path, bytes) => Promise<void>;
      readReference?: (reference, model) => Promise<MediaReferenceBytes>;
+     readAudioReference?: (reference) => Promise<Uint8Array>;
   }>;
   onFailure?: (error) => Response | undefined;
 }> &
@@ -1665,10 +1674,10 @@ type MediaGenerationOutcome =
       path: string;
       bytes: number;
       costMilliunits: number;
-      format: "png" | "jpeg" | "gif" | "webp" | "mp4";
-      height: number;
+      format: "png" | "jpeg" | "gif" | "webp" | "mp4" | "mp3";
+      height?: number;
       model: string;
-      width: number;
+      width?: number;
     }>
   | Readonly<{
       kind: "pending";
@@ -1700,8 +1709,6 @@ const mediaImageBindingInputSchema: ZodObject<{
   settings: ZodObject<{
      model: ZodString;
      prompt: ZodString;
-     width: ZodNumber;
-     height: ZodNumber;
      resolution: ZodOptional<ZodEnum<{
         p480: "480p";
         p720: "720p";
@@ -1728,6 +1735,8 @@ const mediaImageBindingInputSchema: ZodObject<{
            reference: ...;
         }>>;
      }, $strict>>>;
+     width: ZodNumber;
+     height: ZodNumber;
      steps: ZodOptional<ZodNumber>;
   }, $strict>;
   outputFormat: ZodOptional<ZodEnum<{
@@ -1782,6 +1791,9 @@ const mediaVideoBindingInputSchema: ZodObject<{
         path: ZodString;
         role: ZodEnum<...>;
      }, $strict>>>>;
+     audioReferences: ZodOptional<ZodArray<ZodLazy<ZodObject<{
+        path: ZodString;
+     }, $strict>>>>;
   }, $strict>>;
 }, $strict>;
 ```
@@ -1800,8 +1812,6 @@ const mediaBindingGenerationSchema: ZodDiscriminatedUnion<[ZodObject<{
   settings: ZodObject<{
      model: ZodString;
      prompt: ZodString;
-     width: ZodNumber;
-     height: ZodNumber;
      resolution: ZodOptional<ZodEnum<{
         p480: "480p";
         p720: "720p";
@@ -1824,6 +1834,8 @@ const mediaBindingGenerationSchema: ZodDiscriminatedUnion<[ZodObject<{
         path: ZodString;
         role: ZodOptional<...>;
      }, $strict>>>;
+     width: ZodNumber;
+     height: ZodNumber;
      steps: ZodOptional<ZodNumber>;
   }, $strict>;
   outputFormat: ZodOptional<ZodEnum<{
@@ -1865,6 +1877,21 @@ const mediaBindingGenerationSchema: ZodDiscriminatedUnion<[ZodObject<{
      durationSeconds: ZodOptional<ZodNumber>;
      generateAudio: ZodOptional<ZodBoolean>;
      references: ZodOptional<ZodArray<ZodLazy<ZodObject<..., ...>>>>;
+     audioReferences: ZodOptional<ZodArray<ZodLazy<ZodObject<..., ...>>>>;
+  }, $strict>>;
+}, $strict>, ZodObject<{
+  kind: ZodLiteral<"audio">;
+  requestId: ZodLazy<ZodString>;
+  libraryPath: ZodString & ZodType<string, string, $ZodTypeInternals<string, string>>;
+  settings: ZodLazy<ZodObject<{
+     model: ZodEnum<{
+        multilingual: "elevenlabs/eleven-multilingual-v2";
+        v3: "elevenlabs/eleven-v3";
+        music: "elevenlabs/music-v2";
+     }>;
+     prompt: ZodString;
+     voiceId: ZodOptional<ZodString>;
+     durationSeconds: ZodOptional<ZodNumber>;
   }, $strict>>;
 }, $strict>], "kind">;
 ```
@@ -1889,12 +1916,12 @@ const mediaBindingCallSchema: ZodDiscriminatedUnion<[ZodObject<{
      settings: ZodObject<{
         model: ZodString;
         prompt: ZodString;
-        width: ZodNumber;
-        height: ZodNumber;
         resolution: ZodOptional<...>;
         aspectRatio: ZodOptional<...>;
         generateAudio: ZodOptional<...>;
         references: ZodOptional<...>;
+        width: ZodNumber;
+        height: ZodNumber;
         steps: ZodOptional<...>;
      }, $strict>;
      outputFormat: ZodOptional<ZodEnum<{
@@ -1914,6 +1941,17 @@ const mediaBindingCallSchema: ZodDiscriminatedUnion<[ZodObject<{
         durationSeconds: ...;
         generateAudio: ...;
         references: ...;
+        audioReferences: ...;
+     }, $strict>>;
+   }, $strict>, ZodObject<{
+     kind: ZodLiteral<"audio">;
+     requestId: ZodLazy<ZodString>;
+     libraryPath: ZodString & ZodType<string, string, $ZodTypeInternals<..., ...>>;
+     settings: ZodLazy<ZodObject<{
+        model: ...;
+        prompt: ...;
+        voiceId: ...;
+        durationSeconds: ...;
      }, $strict>>;
   }, $strict>], "kind">;
 }, $strict>], "operation">;
@@ -1955,10 +1993,11 @@ const mediaResultSchema: ZodObject<
       gif: "gif";
       webp: "webp";
       mp4: "mp4";
+      mp3: "mp3";
     }>;
-    height: ZodNumber;
+    height: ZodOptional<ZodNumber>;
     model: ZodString;
-    width: ZodNumber;
+    width: ZodOptional<ZodNumber>;
   },
   $strict
 >;
@@ -2074,10 +2113,11 @@ const mediaRequestSchema: ZodObject<{
   settings: ZodObject<{
      model: ZodString;
      prompt: ZodString;
-     width: ZodNumber;
-     height: ZodNumber;
+     width: ZodOptional<ZodNumber>;
+     height: ZodOptional<ZodNumber>;
      steps: ZodOptional<ZodNumber>;
      durationSeconds: ZodOptional<ZodNumber>;
+     voiceId: ZodOptional<ZodString>;
      resolution: ZodOptional<ZodEnum<{
         p480: "480p";
         p720: "720p";
@@ -2103,6 +2143,10 @@ const mediaRequestSchema: ZodObject<{
            last: ...;
            reference: ...;
         }>>;
+     }, $strict>>>;
+     audioReferences: ZodOptional<ZodArray<ZodObject<{
+        computerId: ZodString;
+        path: ZodString;
      }, $strict>>>;
   }, $strict>;
   outputFormat: ZodOptional<ZodEnum<{
@@ -2133,12 +2177,12 @@ Quote the catalog defaults through the exact estimator used before dispatch.
 
 #### Returns
 
-| Name             | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Description                                                       |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `kind`           | `"estimate"`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | An indicative quote, not an admitted generation receipt.          |
-| `basis`          | `"provider-cost"`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Provider cost before the host's billing policy.                   |
-| `settings`       | `Readonly`\<\{ `model`: `string`; `prompt`: `string`; `width`: `number`; `height`: `number`; `steps?`: `number`; `durationSeconds?`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: readonly `Readonly`\<\{ `computerId`: `string`; `path`: `string`; `role?`: `"first-frame"` \| `"last-frame"` \| `"reference"`; \}\>[]; \}\> | Catalog defaults, a one-character prompt and no references.       |
-| `costMilliunits` | `number`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Estimated provider milliunits of a cent for these exact settings. |
+| Name             | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Description                                                       |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| `kind`           | `"estimate"`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | An indicative quote, not an admitted generation receipt.          |
+| `basis`          | `"provider-cost"`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Provider cost before the host's billing policy.                   |
+| `settings`       | `Readonly`\<\{ `model`: `string`; `prompt`: `string`; `width?`: `number`; `height?`: `number`; `steps?`: `number`; `durationSeconds?`: `number`; `voiceId?`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: readonly `Readonly`\<\{ `computerId`: `string`; `path`: `string`; `role?`: `"first-frame"` \| `"last-frame"` \| `"reference"`; \}\>[]; `audioReferences?`: readonly `Readonly`\<\{ `computerId`: `string`; `path`: `string`; `role?`: `"first-frame"` \| `"last-frame"` \| `"reference"`; \}\>[]; \}\> | Catalog defaults, a one-character prompt and no references.       |
+| `costMilliunits` | `number`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Estimated provider milliunits of a cent for these exact settings. |
 
 ---
 
@@ -2205,13 +2249,13 @@ function parseMediaBindingCall(raw):
                   settings: {
                     model: string;
                     prompt: string;
-                    width: number;
-                    height: number;
                     resolution?: "480p" | "720p" | "768p" | "1080p" | "4k";
                     aspectRatio?:
                       "16:9" | "4:3" | "1:1" | "3:4" | "9:16" | "21:9" | "9:21";
                     generateAudio?: boolean;
                     references?: object[];
+                    width: number;
+                    height: number;
                     steps?: number;
                   };
                   outputFormat?: "png" | "jpeg" | "webp";
@@ -2236,6 +2280,21 @@ function parseMediaBindingCall(raw):
                     durationSeconds?: number;
                     generateAudio?: boolean;
                     references?: object[];
+                    audioReferences?: object[];
+                  };
+                }
+              | {
+                  kind: "audio";
+                  requestId: string;
+                  libraryPath: string;
+                  settings: {
+                    model:
+                      | "elevenlabs/eleven-multilingual-v2"
+                      | "elevenlabs/eleven-v3"
+                      | "elevenlabs/music-v2";
+                    prompt: string;
+                    voiceId?: string;
+                    durationSeconds?: number;
                   };
                 };
           };
@@ -2259,20 +2318,25 @@ Parsing and model refusal stay shared; authorization remains host-owned.
 \| `Readonly`\<\{ `kind`: `"parsed"`; `call`: \| \{ `operation`: `"models"`;
 `input`: `Record`\<`string`, `never`\>; \} \| \{ `operation`: `"generate"`;
 `input`: \| \{ `kind`: `"image"`; `requestId`: `string`; `libraryPath`:
-`string`; `settings`: \{ `model`: `string`; `prompt`: `string`; `width`:
-`number`; `height`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \|
-`"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"`
-\| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`:
-`object`[]; `steps?`: `number`; \}; `outputFormat?`: `"png"` \| `"jpeg"` \|
-`"webp"`; \} \| \{ `kind`: `"video"`; `requestId`: `string`; `libraryPath`:
+`string`; `settings`: \{ `model`: `string`; `prompt`: `string`; `resolution?`:
+`"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`:
+`"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`;
+`generateAudio?`: `boolean`; `references?`: `object`[]; `width`: `number`;
+`height`: `number`; `steps?`: `number`; \}; `outputFormat?`: `"png"` \| `"jpeg"`
+\| `"webp"`; \} \| \{ `kind`: `"video"`; `requestId`: `string`; `libraryPath`:
 `string`; `settings`: \{ `model`: \| `"bytedance/seedance-2.5"` \|
 `"bytedance/seedance-2.0"` \| `"bytedance/seedance-2.0-fast"` \|
 `"bytedance/seedance-2.0-mini"` \| `"google/veo-3.1"` \| `"google/veo-3.1-fast"`
 \| `"minimax/h3-max"`; `prompt`: `string`; `resolution?`: `"480p"` \| `"720p"`
 \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \|
 `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `durationSeconds?`:
-`number`; `generateAudio?`: `boolean`; `references?`: `object`[]; \}; \}; \};
-\}\> \| `Readonly`\<\{ `kind`: `"refused"`; `result`: `JSONType`; \}\>
+`number`; `generateAudio?`: `boolean`; `references?`: `object`[];
+`audioReferences?`: `object`[]; \}; \} \| \{ `kind`: `"audio"`; `requestId`:
+`string`; `libraryPath`: `string`; `settings`: \{ `model`: \|
+`"elevenlabs/eleven-multilingual-v2"` \| `"elevenlabs/eleven-v3"` \|
+`"elevenlabs/music-v2"`; `prompt`: `string`; `voiceId?`: `string`;
+`durationSeconds?`: `number`; \}; \}; \}; \}\> \| `Readonly`\<\{ `kind`:
+`"refused"`; `result`: `JSONType`; \}\>
 
 ---
 
@@ -2286,10 +2350,10 @@ Choose the same fixed filename on both hosts without a recursive App lookup.
 
 #### Parameters
 
-| Parameter    | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `input`      | \| \{ `kind`: `"image"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: `string`; `prompt`: `string`; `width`: `number`; `height`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; `steps?`: `number`; \}; `outputFormat?`: `"png"` \| `"jpeg"` \| `"webp"`; \} \| \{ `kind`: `"video"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: \| `"bytedance/seedance-2.5"` \| `"bytedance/seedance-2.0"` \| `"bytedance/seedance-2.0-fast"` \| `"bytedance/seedance-2.0-mini"` \| `"google/veo-3.1"` \| `"google/veo-3.1-fast"` \| `"minimax/h3-max"`; `prompt`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `durationSeconds?`: `number`; `generateAudio?`: `boolean`; `references?`: `object`[]; \}; \} |
-| `computerId` | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Parameter    | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `input`      | \| \{ `kind`: `"image"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: `string`; `prompt`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; `width`: `number`; `height`: `number`; `steps?`: `number`; \}; `outputFormat?`: `"png"` \| `"jpeg"` \| `"webp"`; \} \| \{ `kind`: `"video"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: \| `"bytedance/seedance-2.5"` \| `"bytedance/seedance-2.0"` \| `"bytedance/seedance-2.0-fast"` \| `"bytedance/seedance-2.0-mini"` \| `"google/veo-3.1"` \| `"google/veo-3.1-fast"` \| `"minimax/h3-max"`; `prompt`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `durationSeconds?`: `number`; `generateAudio?`: `boolean`; `references?`: `object`[]; `audioReferences?`: `object`[]; \}; \} \| \{ `kind`: `"audio"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: \| `"elevenlabs/eleven-multilingual-v2"` \| `"elevenlabs/eleven-v3"` \| `"elevenlabs/music-v2"`; `prompt`: `string`; `voiceId?`: `string`; `durationSeconds?`: `number`; \}; \} |
+| `computerId` | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 #### Returns
 
@@ -2307,11 +2371,11 @@ Decode bounded service replies once for both MEDIA host bindings.
 
 #### Parameters
 
-| Parameter    | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `input`      | \| \{ `operation`: `"models"`; `input`: `Record`\<`string`, `never`\>; \} \| \{ `operation`: `"generate"`; `input`: \| \{ `kind`: `"image"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: `string`; `prompt`: `string`; `width`: `number`; `height`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; `steps?`: `number`; \}; `outputFormat?`: `"png"` \| `"jpeg"` \| `"webp"`; \} \| \{ `kind`: `"video"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: \| `"bytedance/seedance-2.5"` \| `"bytedance/seedance-2.0"` \| `"bytedance/seedance-2.0-fast"` \| `"bytedance/seedance-2.0-mini"` \| `"google/veo-3.1"` \| `"google/veo-3.1-fast"` \| `"minimax/h3-max"`; `prompt`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `durationSeconds?`: `number`; `generateAudio?`: `boolean`; `references?`: `object`[]; \}; \}; \} |
-| `computerId` | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `response`   | `Response`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Parameter    | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `input`      | \| \{ `operation`: `"models"`; `input`: `Record`\<`string`, `never`\>; \} \| \{ `operation`: `"generate"`; `input`: \| \{ `kind`: `"image"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: `string`; `prompt`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; `width`: `number`; `height`: `number`; `steps?`: `number`; \}; `outputFormat?`: `"png"` \| `"jpeg"` \| `"webp"`; \} \| \{ `kind`: `"video"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: \| `"bytedance/seedance-2.5"` \| `"bytedance/seedance-2.0"` \| `"bytedance/seedance-2.0-fast"` \| `"bytedance/seedance-2.0-mini"` \| `"google/veo-3.1"` \| `"google/veo-3.1-fast"` \| `"minimax/h3-max"`; `prompt`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `durationSeconds?`: `number`; `generateAudio?`: `boolean`; `references?`: `object`[]; `audioReferences?`: `object`[]; \}; \} \| \{ `kind`: `"audio"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: \| `"elevenlabs/eleven-multilingual-v2"` \| `"elevenlabs/eleven-v3"` \| `"elevenlabs/music-v2"`; `prompt`: `string`; `voiceId?`: `string`; `durationSeconds?`: `number`; \}; \}; \} |
+| `computerId` | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `response`   | `Response`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 #### Returns
 
@@ -2328,7 +2392,7 @@ function quoteMediaGeneration(
 ): Promise<
   Readonly<
     Readonly<{
-      unit: "image" | "video_second";
+      unit: "image" | "video_second" | "audio_second" | "audio_character_block";
       units: number;
     }> &
       object
@@ -2343,25 +2407,28 @@ way its metering does, so the number matches the charge.
 
 #### Parameters
 
-| Parameter              | Type                                                                                                                                                                                                                                                                                                                                                                 | Description                                                                           |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `raw`                  | \{ `model`: `string`; `prompt`: `string`; `width`: `number`; `height`: `number`; `steps?`: `number`; `durationSeconds?`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; \} | -                                                                                     |
-| `raw.model`            | `string`                                                                                                                                                                                                                                                                                                                                                             | Provider catalog model identifier.                                                    |
-| `raw.prompt`           | `string`                                                                                                                                                                                                                                                                                                                                                             | Generation prompt; each model's `maxPromptLength` is enforced on top of this ceiling. |
-| `raw.width`            | `number`                                                                                                                                                                                                                                                                                                                                                             | Requested image width or nominal video selector, not decoded MP4 dimensions.          |
-| `raw.height`           | `number`                                                                                                                                                                                                                                                                                                                                                             | Requested image height or nominal video selector, not decoded MP4 dimensions.         |
-| `raw.steps?`           | `number`                                                                                                                                                                                                                                                                                                                                                             | Model-specific inference step count.                                                  |
-| `raw.durationSeconds?` | `number`                                                                                                                                                                                                                                                                                                                                                             | Requested video length in whole seconds.                                              |
-| `raw.resolution?`      | `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`                                                                                                                                                                                                                                                                                                              | Video resolution; must match the nominal width/height selector.                       |
-| `raw.aspectRatio?`     | `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`                                                                                                                                                                                                                                                                                        | Video aspect; must match the nominal width/height selector.                           |
-| `raw.generateAudio?`   | `boolean`                                                                                                                                                                                                                                                                                                                                                            | Video audio selection.                                                                |
-| `raw.references?`      | `object`[]                                                                                                                                                                                                                                                                                                                                                           | Host-authorized reference images.                                                     |
-| `references`           | [`MediaReferenceReader`](index.md#mediareferencereader)                                                                                                                                                                                                                                                                                                              | -                                                                                     |
+| Parameter              | Type                                                                                                                                                                                                                                                                                                                                                                                                                         | Description                                                                                 |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `raw`                  | \{ `model`: `string`; `prompt`: `string`; `width?`: `number`; `height?`: `number`; `steps?`: `number`; `durationSeconds?`: `number`; `voiceId?`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; `audioReferences?`: `object`[]; \} | -                                                                                           |
+| `raw.model`            | `string`                                                                                                                                                                                                                                                                                                                                                                                                                     | Provider catalog model identifier.                                                          |
+| `raw.prompt`           | `string`                                                                                                                                                                                                                                                                                                                                                                                                                     | Generation prompt; each model's `maxPromptLength` is enforced on top of this ceiling.       |
+| `raw.width?`           | `number`                                                                                                                                                                                                                                                                                                                                                                                                                     | Requested image width or nominal video selector; absent for audio.                          |
+| `raw.height?`          | `number`                                                                                                                                                                                                                                                                                                                                                                                                                     | Requested image height or nominal video selector; absent for audio.                         |
+| `raw.steps?`           | `number`                                                                                                                                                                                                                                                                                                                                                                                                                     | Model-specific inference step count.                                                        |
+| `raw.durationSeconds?` | `number`                                                                                                                                                                                                                                                                                                                                                                                                                     | Requested video or music length in whole seconds.                                           |
+| `raw.voiceId?`         | `string`                                                                                                                                                                                                                                                                                                                                                                                                                     | Speech models only: a premade voice from the catalog; the default when omitted.             |
+| `raw.resolution?`      | `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`                                                                                                                                                                                                                                                                                                                                                                      | Video resolution; must match the nominal width/height selector.                             |
+| `raw.aspectRatio?`     | `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`                                                                                                                                                                                                                                                                                                                                                | Video aspect; must match the nominal width/height selector.                                 |
+| `raw.generateAudio?`   | `boolean`                                                                                                                                                                                                                                                                                                                                                                                                                    | Video audio selection.                                                                      |
+| `raw.references?`      | `object`[]                                                                                                                                                                                                                                                                                                                                                                                                                   | Host-authorized reference images.                                                           |
+| `raw.audioReferences?` | `object`[]                                                                                                                                                                                                                                                                                                                                                                                                                   | Host-authorized reference audio clips; only a model declaring `audioReferences` takes them. |
+| `references`           | [`MediaReferenceReader`](index.md#mediareferencereader)                                                                                                                                                                                                                                                                                                                                                                      | -                                                                                           |
 
 #### Returns
 
-`Promise`\<`Readonly`\<`Readonly`\<\{ `unit`: `"image"` \| `"video_second"`;
-`units`: `number`; \}\> & `object`\>\>
+`Promise`\<`Readonly`\<`Readonly`\<\{ `unit`: `"image"` \| `"video_second"` \|
+`"audio_second"` \| `"audio_character_block"`; `units`: `number`; \}\> &
+`object`\>\>
 
 ---
 

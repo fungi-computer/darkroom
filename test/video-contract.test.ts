@@ -154,6 +154,10 @@ describe("video refinements and provider prices", () => {
         ...reference,
         computerId: "pictures",
       })),
+      audioReferences: selection.audioReferences?.map((reference) => ({
+        ...reference,
+        computerId: "pictures",
+      })),
     });
   it.each([
     ["bytedance/seedance-2.0", "480p", false, 7_000],

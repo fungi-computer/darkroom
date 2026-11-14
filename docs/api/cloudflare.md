@@ -374,9 +374,9 @@ output, and releases the lease so a later retry saves and charges it.
 
 ###### Parameters
 
-| Parameter  | Type                                                                                                                                                                               | Description |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| ...`input` | \[`string`, readonly `Readonly`\<\{ `bytes`: `Uint8Array`; `format`: [`ImageFormat`](index.md#imageformat); `width`: `number`; `height`: `number`; `filename?`: `string`; \}\>[]\] | -           |
+| Parameter  | Type                                                                                                                                                                                                                                                                                                                                                                   | Description |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| ...`input` | \[`string`, readonly `Readonly`\<\{ `bytes`: `Uint8Array`; `format`: [`ImageFormat`](index.md#imageformat); `width`: `number`; `height`: `number`; `filename?`: `string`; \}\>[], readonly `Readonly`\<\{ `bytes`: `Uint8Array`; `mimeType`: [`AudioReferenceMimeType`](index.md#audioreferencemimetype); `durationSeconds`: `number`; `filename?`: `string`; \}\>[]\] | -           |
 
 ###### Returns
 

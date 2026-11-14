@@ -23,10 +23,11 @@ const mediaModelPriceEstimateSchema: ZodObject<{
   settings: ZodObject<{
      model: ZodString;
      prompt: ZodString;
-     width: ZodNumber;
-     height: ZodNumber;
+     width: ZodOptional<ZodNumber>;
+     height: ZodOptional<ZodNumber>;
      steps: ZodOptional<ZodNumber>;
      durationSeconds: ZodOptional<ZodNumber>;
+     voiceId: ZodOptional<ZodString>;
      resolution: ZodOptional<ZodEnum<{
         p480: "480p";
         p720: "720p";
@@ -53,6 +54,10 @@ const mediaModelPriceEstimateSchema: ZodObject<{
            reference: ...;
         }>>;
      }, $strict>>>;
+     audioReferences: ZodOptional<ZodArray<ZodObject<{
+        computerId: ZodString;
+        path: ZodString;
+     }, $strict>>>;
   }, $strict>;
 }, $strict>;
 ```
@@ -75,10 +80,11 @@ const mediaCatalogModelSchema: ZodReadonly<ZodObject<{
      settings: ZodObject<{
         model: ZodString;
         prompt: ZodString;
-        width: ZodNumber;
-        height: ZodNumber;
+        width: ZodOptional<ZodNumber>;
+        height: ZodOptional<ZodNumber>;
         steps: ZodOptional<ZodNumber>;
         durationSeconds: ZodOptional<ZodNumber>;
+        voiceId: ZodOptional<ZodString>;
         resolution: ZodOptional<ZodEnum<{
            p480: ...;
            p720: ...;
@@ -97,6 +103,7 @@ const mediaCatalogModelSchema: ZodReadonly<ZodObject<{
         }>>;
         generateAudio: ZodOptional<ZodBoolean>;
         references: ZodOptional<ZodArray<ZodObject<..., ...>>>;
+        audioReferences: ZodOptional<ZodArray<ZodObject<..., ...>>>;
      }, $strict>;
   }, $strict>>;
   id: ZodString;
@@ -104,6 +111,7 @@ const mediaCatalogModelSchema: ZodReadonly<ZodObject<{
   kind: ZodEnum<{
      image: "image";
      video: "video";
+     audio: "audio";
   }>;
   tier: ZodEnum<{
      draft: "draft";
@@ -178,7 +186,19 @@ const mediaCatalogModelSchema: ZodReadonly<ZodObject<{
      referenceRoles: ZodReadonly<ZodArray<ZodEnum<...>>>;
      maxReferenceImages: ZodNumber;
      referenceResolutions: ZodReadonly<ZodArray<ZodEnum<...>>>;
+     audioReferences: ZodNullable<ZodReadonly<ZodObject<..., ...>>>;
      prices: ZodReadonly<ZodArray<ZodReadonly<...>>>;
+  }, $strict>>>>;
+  audio: ZodNullable<ZodLazy<ZodReadonly<ZodObject<{
+     provider: ZodLiteral<"elevenlabs">;
+     mode: ZodEnum<{
+        speech: "speech";
+        music: "music";
+     }>;
+     voices: ZodReadonly<ZodArray<ZodLazy<...>>>;
+     defaultVoiceId: ZodNullable<ZodString>;
+     seconds: ZodNullable<ZodReadonly<ZodObject<..., ...>>>;
+     milliunitsPerUnit: ZodNumber;
   }, $strict>>>>;
 }, $strict>>;
 ```
@@ -201,14 +221,16 @@ const mediaModelsSchema: ZodLazy<ZodArray<ZodReadonly<ZodObject<{
      settings: ZodObject<{
         model: ZodString;
         prompt: ZodString;
-        width: ZodNumber;
-        height: ZodNumber;
+        width: ZodOptional<...>;
+        height: ZodOptional<...>;
         steps: ZodOptional<...>;
         durationSeconds: ZodOptional<...>;
+        voiceId: ZodOptional<...>;
         resolution: ZodOptional<...>;
         aspectRatio: ZodOptional<...>;
         generateAudio: ZodOptional<...>;
         references: ZodOptional<...>;
+        audioReferences: ZodOptional<...>;
      }, $strict>;
   }, $strict>>;
   id: ZodString;
@@ -216,6 +238,7 @@ const mediaModelsSchema: ZodLazy<ZodArray<ZodReadonly<ZodObject<{
   kind: ZodEnum<{
      image: "image";
      video: "video";
+     audio: "audio";
   }>;
   tier: ZodEnum<{
      draft: "draft";
@@ -272,7 +295,16 @@ const mediaModelsSchema: ZodLazy<ZodArray<ZodReadonly<ZodObject<{
      referenceRoles: ZodReadonly<...>;
      maxReferenceImages: ZodNumber;
      referenceResolutions: ZodReadonly<...>;
+     audioReferences: ZodNullable<...>;
      prices: ZodReadonly<...>;
+  }, $strict>>>>;
+  audio: ZodNullable<ZodLazy<ZodReadonly<ZodObject<{
+     provider: ZodLiteral<...>;
+     mode: ZodEnum<...>;
+     voices: ZodReadonly<...>;
+     defaultVoiceId: ZodNullable<...>;
+     seconds: ZodNullable<...>;
+     milliunitsPerUnit: ZodNumber;
   }, $strict>>>>;
 }, $strict>>>>;
 ```
@@ -317,10 +349,11 @@ const appMediaGenerationResultSchema: ZodObject<
       gif: "gif";
       webp: "webp";
       mp4: "mp4";
+      mp3: "mp3";
     }>;
-    height: ZodNumber;
+    height: ZodOptional<ZodNumber>;
     model: ZodString;
-    width: ZodNumber;
+    width: ZodOptional<ZodNumber>;
   },
   $strict
 >;
@@ -550,6 +583,7 @@ const appMediaModelsOutcomeSchema: ZodUnion<readonly [ZodLazy<ZodArray<ZodReadon
   kind: ZodEnum<{
      image: "image";
      video: "video";
+     audio: "audio";
   }>;
   tier: ZodEnum<{
      draft: "draft";
@@ -580,6 +614,7 @@ const appMediaModelsOutcomeSchema: ZodUnion<readonly [ZodLazy<ZodArray<ZodReadon
   }, $strict>>>;
   sizes: ZodNullable<ZodReadonly<ZodArray<ZodString>>>;
   video: ZodNullable<ZodLazy<ZodReadonly<ZodObject<..., ...>>>>;
+  audio: ZodNullable<ZodLazy<ZodReadonly<ZodObject<..., ...>>>>;
 }, $strict>>>>, ZodUnion<readonly [ZodObject<{
   error: ZodEnum<{
      revoked: "revoked";
@@ -646,10 +681,11 @@ const appMediaGenerationOutcomeSchema: ZodUnion<readonly [ZodObject<{
      gif: "gif";
      webp: "webp";
      mp4: "mp4";
+     mp3: "mp3";
   }>;
-  height: ZodNumber;
+  height: ZodOptional<ZodNumber>;
   model: ZodString;
-  width: ZodNumber;
+  width: ZodOptional<ZodNumber>;
 }, $strict>, ZodObject<{
   kind: ZodLiteral<"pending">;
   retryAfterMs: ZodNumber;

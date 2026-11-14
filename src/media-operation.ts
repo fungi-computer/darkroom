@@ -102,8 +102,9 @@ export function executeMediaOperation(input: MediaExecution) {
       ),
       input.catalogue,
     );
+    // Video and audio run through the durable alarm; only an image is inline.
     const background =
-      getMediaModel(input.request.model, input.catalogue)?.kind === "video";
+      getMediaModel(input.request.model, input.catalogue)?.kind !== "image";
     /** Best-effort release; true proves customer settlement, not supplier billing. */
     const settleNothing = () =>
       metering === null
@@ -219,6 +220,7 @@ export function executeMediaOperation(input: MediaExecution) {
               input.operation.dispatchInBackground(
                 leaseId,
                 prepared.references,
+                prepared.audioReferences,
               ),
             "operation",
           ).pipe(
@@ -318,6 +320,7 @@ export function executeMediaOperation(input: MediaExecution) {
       // retry writes byte-identical output. A charged generation is never
       // failed over metadata, so a malformed or truncated provider image is
       // written as-is; embedProvenance never throws.
+      // MP3 is not listed: audio carries no embedded provenance, like MP4.
       const format = z
         .enum(["png", "jpeg", "gif", "webp", "mp4"])
         .safeParse(output.format);

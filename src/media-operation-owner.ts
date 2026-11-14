@@ -14,7 +14,11 @@ import type {
   MediaOperationContext,
   MediaOperationBucket,
 } from "./media-operation-storage.js";
-import type { MediaProvider, MediaReferenceBytes } from "./index.js";
+import type {
+  MediaAudioReferenceBytes,
+  MediaProvider,
+  MediaReferenceBytes,
+} from "./index.js";
 import { reportCatchFailure } from "./failure.js";
 import {
   MediaExecutionError,
@@ -50,6 +54,14 @@ const referenceMetadataSchema = z.lazy(() =>
 );
 const referenceKey = (operationId: string, index: number) =>
   `media-reference/v1/${operationId}/${String(index)}`;
+const audioReferenceMetadataSchema = z.lazy(() =>
+  z.object({
+    mimeType: z.enum(["audio/mpeg", "audio/mp4", "audio/wav", "audio/ogg"]),
+    durationSeconds: z.coerce.number().positive(),
+  }),
+);
+const audioReferenceKey = (operationId: string, index: number) =>
+  `media-audio-reference/v1/${operationId}/${String(index)}`;
 
 /** Fixed generation destination captured before provider dispatch. */
 export const mediaOperationDestinationSchema = z.lazy(() =>
@@ -113,7 +125,14 @@ export const mediaImageSchema = z.lazy(() =>
 export type MediaImage = z.output<typeof mediaImageSchema>;
 const retainedFormatSchema = z.lazy(() =>
   z
-    .enum(["image/png", "image/jpeg", "image/gif", "image/webp", "video/mp4"])
+    .enum([
+      "image/png",
+      "image/jpeg",
+      "image/gif",
+      "image/webp",
+      "video/mp4",
+      "audio/mpeg",
+    ])
     .transform(
       (mime) =>
         ({
@@ -122,6 +141,7 @@ const retainedFormatSchema = z.lazy(() =>
           "image/gif": "gif",
           "image/webp": "webp",
           "video/mp4": "mp4",
+          "audio/mpeg": "mp3",
         })[mime],
     ),
 );
@@ -311,7 +331,11 @@ export type MediaOperationEnvironment = Readonly<{
 
 /** Stored media type for an output format. */
 const outputMime = (format: string) =>
-  format === "mp4" ? "video/mp4" : `image/${format}`;
+  format === "mp4"
+    ? "video/mp4"
+    : format === "mp3"
+      ? "audio/mpeg"
+      : `image/${format}`;
 const operationRowSchema = z.lazy(() =>
   z.object({
     operation_id: z.string(),
@@ -596,7 +620,11 @@ export class MediaOperationOwner {
     if (
       record?.namespace !== namespace ||
       record.state !== "succeeded" ||
-      record.output === null
+      record.output === null ||
+      // Public sharing covers pictures and video; audio has no dimensions to
+      // show and no public page yet.
+      record.input.width === undefined ||
+      record.input.height === undefined
     )
       return null;
     return Object.freeze({
@@ -1002,6 +1030,7 @@ export class MediaOperationOwner {
   public async dispatchInBackground(
     leaseId: string,
     references: readonly MediaReferenceBytes[],
+    audioReferences: readonly MediaAudioReferenceBytes[],
   ): Promise<MediaOperationProjection> {
     const record = this.requireRecord();
     if (record.state !== "generating" || record.leaseId !== leaseId)
@@ -1015,6 +1044,18 @@ export class MediaOperationOwner {
             format: reference.format,
             width: String(reference.width),
             height: String(reference.height),
+          },
+        },
+      );
+    }
+    for (const [index, clip] of audioReferences.entries()) {
+      await this.env.APP_ARTIFACTS.put(
+        audioReferenceKey(record.operationId, index),
+        clip.bytes,
+        {
+          customMetadata: {
+            mimeType: clip.mimeType,
+            durationSeconds: String(clip.durationSeconds),
           },
         },
       );
@@ -1076,6 +1117,22 @@ export class MediaOperationOwner {
           };
         }),
       );
+      const audioReferences = await Promise.all(
+        (record.input.audioReferences ?? []).map(async (_reference, index) => {
+          const object = await this.env.APP_ARTIFACTS.get(
+            audioReferenceKey(record.operationId, index),
+          );
+          if (object === null)
+            throw new Error("Media audio reference is unavailable");
+          const metadata = audioReferenceMetadataSchema.parse(
+            object.customMetadata,
+          );
+          return {
+            ...metadata,
+            bytes: new Uint8Array(await object.arrayBuffer()),
+          };
+        }),
+      );
       // The captured request includes destination authority; providers receive settings only.
       const settings = validateMediaGenerationSettings(
         mediaGenerationSettingsSchema.strip().parse(record.input),
@@ -1086,6 +1143,7 @@ export class MediaOperationOwner {
         references,
         undefined,
         record.input.outputFormat,
+        audioReferences,
       );
     } catch (cause) {
       reportCatchFailure("media-operation-provider", cause);
@@ -1110,11 +1168,16 @@ export class MediaOperationOwner {
       return;
     }
     await this.recordGenerated(leaseId, output.bytes, output.format);
-    await Promise.all(
-      (record.input.references ?? []).map((_reference, index) =>
+    await Promise.all([
+      ...(record.input.references ?? []).map((_reference, index) =>
         this.env.APP_ARTIFACTS.delete(referenceKey(record.operationId, index)),
       ),
-    ).catch((cause: unknown) => {
+      ...(record.input.audioReferences ?? []).map((_reference, index) =>
+        this.env.APP_ARTIFACTS.delete(
+          audioReferenceKey(record.operationId, index),
+        ),
+      ),
+    ]).catch((cause: unknown) => {
       reportCatchFailure("media-reference-cleanup", cause);
     });
     // Release the lease: the next retry of this request claims the save.

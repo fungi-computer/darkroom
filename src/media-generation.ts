@@ -5,6 +5,7 @@ import {
   resolveMediaReferences,
   MediaSettingsError,
 } from "./index.js";
+import { resolveMediaAudioReferences } from "./audio-references.js";
 import { estimate } from "./cloudflare/provider.js";
 import { mediaModels } from "./model-catalog.js";
 import { executeMediaOperation } from "./media-operation.js";
@@ -93,6 +94,19 @@ export function runMediaGeneration(
             },
             catalogue,
           );
+          const audioReferences = await resolveMediaAudioReferences(
+            settings,
+            {
+              read: (reference) => {
+                if (host.destination.readAudioReference === undefined)
+                  throw new MediaSettingsError(
+                    "audio references are unavailable",
+                  );
+                return host.destination.readAudioReference(reference);
+              },
+            },
+            catalogue,
+          );
           const costMilliunits = estimator(settings, references);
           // Reference preparation may suspend. This final authority check is
           // the new-generation admission cutoff, before durable dispatch.
@@ -106,12 +120,14 @@ export function runMediaGeneration(
           return {
             costMilliunits,
             references,
+            audioReferences,
             run: (runSignal?: AbortSignal) =>
               host.provider(
                 settings,
                 references,
                 runSignal,
                 request.outputFormat,
+                audioReferences,
               ),
           };
         },
@@ -123,7 +139,7 @@ export function runMediaGeneration(
     if (
       outcome.kind === "accepted" ||
       (outcome.kind === "pending" &&
-        getMediaModel(settings.model, catalogue)?.kind === "video")
+        getMediaModel(settings.model, catalogue)?.kind !== "image")
     )
       // A video generation runs in the background; retry this request id.
       return {
@@ -145,8 +161,8 @@ export function runMediaGeneration(
       costMilliunits: outcome.costMilliunits,
       path,
       format: mediaResultSchema.shape.format.parse(outcome.format),
-      height: settings.height,
       model: settings.model,
+      height: settings.height,
       width: settings.width,
     };
   });

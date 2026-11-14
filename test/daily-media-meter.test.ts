@@ -67,7 +67,12 @@ function execute(
       },
       generation: {
         prepare: () =>
-          Promise.resolve({ costMilliunits: 600, references: [], run }),
+          Promise.resolve({
+            costMilliunits: 600,
+            references: [],
+            audioReferences: [],
+            run,
+          }),
       },
     }),
   );

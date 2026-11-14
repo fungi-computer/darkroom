@@ -9,9 +9,11 @@ import {
   validateMediaGenerationSettings,
   type MediaModel,
   type MediaAiResult,
+  type MediaAudioReferenceBytes,
   type MediaGenerationSettings,
   type MediaProvider,
   type MediaReferenceBytes,
+  MediaSettingsError,
 } from "../index.js";
 import {
   MediaExecutionError,
@@ -32,6 +34,10 @@ import {
   isMp4,
 } from "../gateway-wire.js";
 import { videoProviderAdapters } from "../video-providers/index.js";
+import {
+  decodeElevenLabsResultUrl,
+  ELEVENLABS_MAX_BYTES,
+} from "../audio-providers/elevenlabs.js";
 import { readResponseBytes } from "../index.js";
 
 type ImageEstimateParams = {
@@ -43,12 +49,16 @@ type ImageEstimateParams = {
 
 /** Quote the catalog defaults through the exact estimator used before dispatch. */
 export function estimateMediaModel(model: MediaModel) {
-  const settings = validateMediaGenerationSettings({
-    model: model.id,
-    prompt: "x",
-    width: model.input.defaultWidth,
-    height: model.input.defaultHeight,
-  });
+  const settings = validateMediaGenerationSettings(
+    model.kind === "audio"
+      ? { model: model.id, prompt: "x" }
+      : {
+          model: model.id,
+          prompt: "x",
+          width: model.input.defaultWidth,
+          height: model.input.defaultHeight,
+        },
+  );
   return {
     /** An indicative quote, not an admitted generation receipt. */
     kind: "estimate" as const,
@@ -75,15 +85,17 @@ export function estimate(
   settings: MediaGenerationSettings,
   references: readonly MediaReferenceBytes[],
 ): number {
-  const params: ImageEstimateParams = {
-    width: settings.width,
-    height: settings.height,
-    references: references.map(({ width, height }) => ({ width, height })),
-  };
-  if (settings.steps !== undefined) params.steps = settings.steps;
   try {
     if (isGatewayModel(settings.model))
       return estimateGatewayMilliunits(settings, references);
+    if (settings.width === undefined || settings.height === undefined)
+      throw new MediaSettingsError("image cost needs a width and a height");
+    const params: ImageEstimateParams = {
+      width: settings.width,
+      height: settings.height,
+      references: references.map(({ width, height }) => ({ width, height })),
+    };
+    if (settings.steps !== undefined) params.steps = settings.steps;
     return estimateImageMilliunits(settings.model, params);
   } catch (cause) {
     throw new MediaExecutionError("estimate", { cause });
@@ -213,10 +225,16 @@ async function generateThroughGateway(
   options: AiOptions | undefined,
   fetchResult: typeof fetch,
   outputFormat: "png" | "jpeg" | "webp" | undefined,
+  audioReferences: readonly MediaAudioReferenceBytes[],
 ): Promise<{ bytes: Uint8Array; format: string }> {
   let providerValue: MediaAiResult;
   try {
-    const input = gatewayInput(settings, references, outputFormat);
+    const input = gatewayInput(
+      settings,
+      references,
+      outputFormat,
+      audioReferences,
+    );
     providerValue = await ai.run(
       settings.model,
       input,
@@ -231,6 +249,22 @@ async function generateThroughGateway(
   const model = getGatewayModel(settings.model);
   const video = model?.kind === "video";
   try {
+    if (model?.kind === "audio") {
+      const response = await fetchResult(
+        decodeElevenLabsResultUrl(providerValue),
+        { signal: signal ?? null },
+      );
+      if (!response.ok)
+        throw new MediaExecutionError("normalization", {
+          provider: { category: "result_download", status: response.status },
+        });
+      // The result URL is the gateway's own output object; the bytes are
+      // retained as fetched, within the size bound.
+      return {
+        bytes: await readResponseBytes(response, ELEVENLABS_MAX_BYTES),
+        format: "mp3",
+      };
+    }
     if (video) {
       if (model.video === null)
         throw new Error("video model is missing its catalog video metadata");
@@ -268,6 +302,7 @@ export async function generate(
   options?: AiOptions,
   fetchResult: typeof fetch = (input, init) => fetch(input, init),
   outputFormat?: "png" | "jpeg" | "webp",
+  audioReferences: readonly MediaAudioReferenceBytes[] = [],
 ): Promise<{ bytes: Uint8Array; format: string }> {
   if (isGatewayModel(settings.model))
     return generateThroughGateway(
@@ -278,6 +313,7 @@ export async function generate(
       options,
       fetchResult,
       outputFormat,
+      audioReferences,
     );
   let providerInput: ReturnType<typeof buildProviderInput>;
   try {
@@ -331,7 +367,7 @@ export function createWorkersAiMediaProvider(
   ai: MediaAiPort,
   options?: AiOptions,
 ): MediaProvider {
-  return (settings, references, signal, outputFormat) =>
+  return (settings, references, signal, outputFormat, audioReferences) =>
     generate(
       ai,
       settings,
@@ -340,5 +376,6 @@ export function createWorkersAiMediaProvider(
       options,
       undefined,
       outputFormat,
+      audioReferences,
     );
 }

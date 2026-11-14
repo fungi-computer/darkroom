@@ -22,7 +22,7 @@ import { runMediaGeneration } from "./media-generation.js";
 import { quoteMediaGeneration } from "./media-quote.js";
 import {
   validateMediaGenerationSettings,
-  mediaModels,
+  listPictureMediaModels,
   mediaGenerationSettingsSchema,
   mediaRequestedImageFormatSchema,
   MediaSettingsError,
@@ -182,6 +182,8 @@ export type MediaServiceHost = Readonly<{
       reference: MediaReference,
       model: string,
     ) => Promise<MediaReferenceBytes>;
+    /** Authorize and read the raw bytes of one reference audio clip. */
+    readAudioReference?: (reference: MediaReference) => Promise<Uint8Array>;
   }>;
   /** Translate host authority failures; undefined uses the shared Media failure. */
   onFailure?: (error: MediaExecutionError) => Response | undefined;
@@ -386,13 +388,13 @@ export type MediaGenerationOutcome =
       /** Admitted price in milliunits, where 1 cent is 1,000 milliunits. */
       costMilliunits: number;
       /** Actual output encoding. */
-      format: "png" | "jpeg" | "gif" | "webp" | "mp4";
-      /** Requested image height or nominal video selector, not decoded MP4 dimensions. */
-      height: number;
+      format: "png" | "jpeg" | "gif" | "webp" | "mp4" | "mp3";
+      /** Requested image height or nominal video selector; absent for audio. */
+      height?: number | undefined;
       /** Provider catalog model identifier. */
       model: string;
-      /** Requested image width or nominal video selector, not decoded MP4 dimensions. */
-      width: number;
+      /** Requested image width or nominal video selector; absent for audio. */
+      width?: number | undefined;
     }>
   | Readonly<{
       /** Outcome or model-kind discriminant. */
@@ -490,8 +492,8 @@ function outcomeResponse(outcome: MediaGenerationOutcome): Response {
       costMilliunits: outcome.costMilliunits,
       path: outcome.path,
       format: outcome.format,
-      height: outcome.height,
       model: outcome.model,
+      height: outcome.height,
       width: outcome.width,
     }),
     { headers },
@@ -503,20 +505,27 @@ export function createMediaService(host: MediaServiceHost) {
   const app = new Hono();
   app.get("/models", () =>
     Response.json(
-      (host.catalogue ?? mediaModels).map((model) =>
-        host.destination.readReference !== undefined ||
-        model.input.maxReferences === 0
-          ? model
-          : {
-              ...model,
-              label: `${model.label} (reference images unavailable in this App host)`,
-              input: {
-                ...model.input,
-                maxReferences: 0,
-                referenceField: null,
+      (host.catalogue ?? listPictureMediaModels())
+        .map((model) =>
+          host.destination.readReference !== undefined ||
+          model.input.maxReferences === 0
+            ? model
+            : {
+                ...model,
+                label: `${model.label} (reference images unavailable in this App host)`,
+                input: {
+                  ...model.input,
+                  maxReferences: 0,
+                  referenceField: null,
+                },
               },
-            },
-      ),
+        )
+        .map((model) =>
+          host.destination.readAudioReference !== undefined ||
+          model.video?.audioReferences == null
+            ? model
+            : { ...model, video: { ...model.video, audioReferences: null } },
+        ),
       { headers },
     ),
   );

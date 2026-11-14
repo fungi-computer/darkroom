@@ -1,5 +1,6 @@
 import type {
   MediaAiResult,
+  MediaAudioReferenceBytes,
   MediaGenerationSettings,
   MediaReferenceBytes,
 } from "../index.js";
@@ -39,6 +40,7 @@ export type VideoProviderAdapter = {
     checked: CheckedVideoSettings,
     references: readonly MediaReferenceBytes[],
     model: MediaModel,
+    audioReferences: readonly MediaAudioReferenceBytes[],
   ): VideoProviderInput;
   /** Extract and validate the HTTPS result URL from the raw provider answer. */
   decodeResultUrl(providerValue: MediaAiResult): string;

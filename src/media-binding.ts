@@ -5,10 +5,12 @@ import { mediaRequestIdSchema } from "@fungi.computer/agar/media-request-id";
 import { mediaLibraryPathSchema } from "@fungi.computer/agar/media-library";
 import {
   getGatewayModel,
+  mediaAudioSelectionSchema,
   mediaGenerationSelectionSchema,
   mediaRequestedImageFormatSchema,
   mediaVideoSelectionSchema,
   validateMediaGenerationSelection,
+  validateMediaGenerationSettings,
   validateMediaVideoSelection,
   MediaSettingsError,
   readResponseBytes,
@@ -39,8 +41,12 @@ export const mediaImageBindingInputSchema = z.strictObject({
   libraryPath: mediaBindingLibraryPathSchema,
   /** Image model selection, references and inference settings. */
   settings: mediaGenerationSelectionSchema
-    .omit({ durationSeconds: true })
+    .omit({ durationSeconds: true, voiceId: true, audioReferences: true })
     .extend({
+      /** Output width in pixels; an image always names its size. */
+      width: z.number().int().min(1).max(5_040),
+      /** Output height in pixels; an image always names its size. */
+      height: z.number().int().min(1).max(5_040),
       /** Optional inference-step count for models that support it. */
       steps: z
         .number()
@@ -67,10 +73,22 @@ export const mediaVideoBindingInputSchema = z.strictObject({
   /** Catalog-backed video model, size, duration and references. */
   settings: mediaVideoSelectionSchema,
 });
+/** Speech or music settings crossing the same scoped binding; audio takes no references. */
+export const mediaAudioBindingInputSchema = z.strictObject({
+  /** Select speech or music generation. */
+  kind: z.literal("audio"),
+  /** Attempt identity retained through polling and replay. */
+  requestId: mediaRequestIdSchema,
+  /** App-owned absolute folder; the host supplies Computer authority. */
+  libraryPath: mediaBindingLibraryPathSchema,
+  /** Catalog-backed audio model, prompt, voice and length. */
+  settings: mediaAudioSelectionSchema,
+});
 /** One generation identity, including the App-owned folder captured for replay. */
 export const mediaBindingGenerationSchema = z.discriminatedUnion("kind", [
   mediaImageBindingInputSchema,
   mediaVideoBindingInputSchema,
+  mediaAudioBindingInputSchema,
 ]);
 /** Parsed generation command consumed by either host. */
 export type MediaBindingGeneration = z.output<
@@ -124,6 +142,8 @@ export function parseMediaBindingCall(raw: z.core.util.JSONType):
     try {
       if (parsed.data.input.kind === "image")
         validateMediaGenerationSelection(parsed.data.input.settings);
+      else if (parsed.data.input.kind === "audio")
+        validateMediaGenerationSettings(parsed.data.input.settings);
       else validateMediaVideoSelection(parsed.data.input.settings);
     } catch (cause) {
       if (!(cause instanceof MediaSettingsError)) throw cause;
@@ -146,7 +166,7 @@ export type MediaBindingRequest = Readonly<{
   path: string;
   /** Validated references with explicit Computer identities, authorized by the host. */
   settings: MediaGenerationSettings;
-  /** Optional image encoding; video output remains MP4. */
+  /** Optional image encoding; video output remains MP4 and audio MP3. */
   outputFormat?: z.output<typeof mediaRequestedImageFormatSchema>;
 }>;
 /** Choose the same fixed filename on both hosts without a recursive App lookup. */
@@ -157,28 +177,34 @@ export function mediaBindingRequest(
   const selected =
     input.kind === "image"
       ? validateMediaGenerationSelection(input.settings)
-      : validateMediaVideoSelection(input.settings);
-  const { references, ...settings } = selected;
+      : input.kind === "audio"
+        ? validateMediaGenerationSettings(input.settings)
+        : validateMediaVideoSelection(input.settings);
+  const { references, audioReferences, ...settings } = selected;
   const model = getGatewayModel(input.settings.model);
   const format =
     input.kind === "video"
       ? "mp4"
-      : (input.outputFormat ??
-        (model?.outputFormats.includes("png")
-          ? "png"
-          : (model?.outputFormats[0] ?? "png")));
+      : input.kind === "audio"
+        ? "mp3"
+        : (input.outputFormat ??
+          (model?.outputFormats.includes("png")
+            ? "png"
+            : (model?.outputFormats[0] ?? "png")));
+  const attach = <
+    Reference extends { path: string; computerId?: string | undefined },
+  >(
+    selection: readonly Reference[],
+  ) =>
+    selection.map((reference) => ({
+      ...reference,
+      computerId: reference.computerId ?? computerId,
+    }));
   let attached: MediaGenerationSettings = settings;
   if (references !== undefined)
-    attached = {
-      ...settings,
-      references: references.map((reference) => ({
-        ...reference,
-        computerId:
-          "computerId" in reference
-            ? (reference.computerId ?? computerId)
-            : computerId,
-      })),
-    };
+    attached = { ...attached, references: attach(references) };
+  if (audioReferences !== undefined)
+    attached = { ...attached, audioReferences: attach(audioReferences) };
   const request: MediaBindingRequest = {
     path: `${input.libraryPath}/prints-${input.requestId}.${format}`,
     settings: attached,
@@ -224,8 +250,10 @@ export async function readMediaBindingReply(
     result.destination.computerId !== computerId ||
     (input.input.kind === "video"
       ? result.format !== "mp4"
-      : input.input.outputFormat !== undefined &&
-        result.format !== input.input.outputFormat)
+      : input.input.kind === "audio"
+        ? result.format !== "mp3"
+        : input.input.outputFormat !== undefined &&
+          result.format !== input.input.outputFormat)
   )
     return { error: "unavailable" };
   return z.json().parse(result);

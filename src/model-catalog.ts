@@ -28,7 +28,7 @@ export const mediaModelTierSchema = z.enum({
 /** A model selection tier, independent of billing price. */
 export type MediaModelTier = z.output<typeof mediaModelTierSchema>;
 
-/** Media's provider catalog: Workers AI images plus gateway image and video models. */
+/** Media's provider catalog: Workers AI images plus gateway image, video and audio models. */
 export const mediaModelInputSchema = z.lazy(() =>
   z
     .strictObject({
@@ -218,6 +218,20 @@ export const mediaVideoSchema = z.lazy(() =>
       maxReferenceImages: z.number().int().nonnegative(),
       /** Resolutions supporting reference-image mode. */
       referenceResolutions: z.array(mediaVideoResolutionSchema).readonly(),
+      /**
+       * Audio clips accepted as `reference_audios`, or null when the model has
+       * no audio references. Declared by the provider's input schema, never
+       * inferred from the family.
+       */
+      audioReferences: z
+        .strictObject({
+          /** Most clips in one request. */
+          max: z.number().int().positive(),
+          /** Longest total duration of all clips, in seconds. */
+          totalSeconds: z.number().int().positive(),
+        })
+        .readonly()
+        .nullable(),
       /** Non-video-input provider cost; 1 USD = 100,000 milliunits. */
       prices: z
         .array(
@@ -240,6 +254,79 @@ export const mediaVideoSchema = z.lazy(() =>
 export type MediaVideoModel = z.output<typeof mediaVideoSchema>;
 
 /**
+ * Verified ElevenLabs model identifiers on Cloudflare's Unified Billing, from
+ * the model pages under https://developers.cloudflare.com/ai/models/elevenlabs/
+ * (checked 2026-11-13). Cloudflare offers no sound-effects model. Eleven Flash
+ * v2.5 and Turbo v2.5 are listed there but a live Unified Billing call to Flash
+ * answered 403 code 2047 ("not available via unified billing. Please use
+ * BYOK"), so they are not offered. Multilingual v2 is the default voice model.
+ */
+export const mediaAudioModelIdSchema = z.enum({
+  /** Eleven Multilingual v2 text to speech. */
+  multilingual: "elevenlabs/eleven-multilingual-v2",
+  /** Eleven v3 expressive text to speech. */
+  v3: "elevenlabs/eleven-v3",
+  /** Eleven Music v2. */
+  music: "elevenlabs/music-v2",
+});
+/** Verified audio model identifier. */
+export type MediaAudioModelId = z.output<typeof mediaAudioModelIdSchema>;
+
+/** One premade voice a speech model may speak with. */
+export const mediaAudioVoiceSchema = z.lazy(() =>
+  z
+    .strictObject({
+      /** ElevenLabs voice identifier, exactly as Cloudflare's docs list it. */
+      id: z.string().min(1).max(64),
+      /** Customer-visible voice label. */
+      label: z.string().min(1).max(128),
+    })
+    .readonly(),
+);
+/** One premade speech voice. */
+export type MediaAudioVoice = z.output<typeof mediaAudioVoiceSchema>;
+
+/** Verified audio parameters and provider cost, checked 2026-11-13. */
+export const mediaAudioSchema = z.lazy(() =>
+  z
+    .strictObject({
+      /** Provider translation family. */
+      provider: z.literal("elevenlabs"),
+      /** Speech reads the prompt aloud; music composes from it. */
+      mode: z.enum({
+        /** Text to speech: the prompt is the spoken text. */
+        speech: "speech",
+        /** Music: the prompt describes the track. */
+        music: "music",
+      }),
+      /** Premade voices; empty for music. */
+      voices: z.array(mediaAudioVoiceSchema).readonly(),
+      /** Voice used when none is chosen; null for music. */
+      defaultVoiceId: z.string().min(1).max(64).nullable(),
+      /** Music length bounds in whole seconds; null for speech. */
+      seconds: z
+        .strictObject({
+          /** Shortest track. */
+          min: z.number().int().positive(),
+          /** Longest track. */
+          max: z.number().int().positive(),
+          /** Length when omitted. */
+          default: z.number().int().positive(),
+        })
+        .readonly()
+        .nullable(),
+      /** Provider milliunits per billed unit; 1 USD = 100,000 milliunits. */
+      milliunitsPerUnit: z.number().int().positive(),
+    })
+    .readonly(),
+);
+/** Immutable audio capability and price metadata. */
+export type MediaAudioModel = z.output<typeof mediaAudioSchema>;
+
+/** Characters one speech billing block covers. */
+export const AUDIO_CHARACTER_BLOCK = 100;
+
+/**
  * Structural ceiling for any prompt on the wire. Each model's own
  * `maxPromptLength` is the real bound; no model may exceed this ceiling.
  */
@@ -260,6 +347,8 @@ export const mediaModelSchema = z
       image: "image",
       /** Video generation. */
       video: "video",
+      /** Speech or music generation. */
+      audio: "audio",
     }),
     /** Model selection tier, independent of price. */
     tier: mediaModelTierSchema,
@@ -282,6 +371,8 @@ export const mediaModelSchema = z
       .nullable(),
     /** Video length constraints, or null for a still-image model. */
     video: mediaVideoSchema.nullable(),
+    /** Speech or music constraints, or null for an image or video model. */
+    audio: mediaAudioSchema.nullable(),
   })
   .readonly();
 
@@ -291,13 +382,19 @@ export type MediaModelInput = z.output<typeof mediaModelInputSchema>;
 export type MediaModel = z.output<typeof mediaModelSchema>;
 
 const freezeModel = (
-  model: Omit<MediaModel, "kind" | "sizes" | "video" | "outputFormats"> &
-    Partial<Pick<MediaModel, "kind" | "sizes" | "video" | "outputFormats">>,
+  model: Omit<
+    MediaModel,
+    "kind" | "sizes" | "video" | "audio" | "outputFormats"
+  > &
+    Partial<
+      Pick<MediaModel, "kind" | "sizes" | "video" | "audio" | "outputFormats">
+    >,
 ): MediaModel =>
   Object.freeze({
     kind: "image",
     sizes: null,
     video: null,
+    audio: null,
     outputFormats: Object.freeze([]),
     ...model,
     input: Object.freeze(model.input),
@@ -409,10 +506,13 @@ const videoAspects = {
  * Prices are Cloudflare dashboard prices, supplied by the owner 2026-11-13;
  * the public model page lists none. Only the non-video-input rates apply, as
  * video-input references are unsupported.
+ * `reference_audios` takes at most 10 clips totalling 30 seconds
+ * (https://developers.cloudflare.com/ai/models/bytedance/seedance-2.5/schema-input.json).
  */
 const seedance25 = {
   maxSeconds: 30,
   maxReferenceImages: 30,
+  audioReferences: { max: 10, totalSeconds: 30 },
   maxPromptLength: 25_000,
   resolutions: ["480p", "720p"],
   aspects: mediaVideoAspectRatioSchema.options.filter(
@@ -486,6 +586,10 @@ function videoModel(
         : [mediaVideoReferenceRoleSchema.enum.first],
     ),
     maxReferenceImages,
+    audioReferences:
+      bounds === undefined
+        ? null
+        : Object.freeze({ ...bounds.audioReferences }),
     referenceResolutions: Object.freeze(
       seedance
         ? resolutions.filter((resolution) => resolution !== "1080p")
@@ -606,6 +710,7 @@ function minimaxVideoModel(): MediaModel {
     // The vendor page documents up to nine; this stays at the conservative
     // verified value of four until the gateway schema is confirmed.
     maxReferenceImages: 4,
+    audioReferences: null,
     referenceResolutions: Object.freeze(resolutions),
     prices: Object.freeze([
       {
@@ -648,6 +753,98 @@ function minimaxVideoModel(): MediaModel {
       // directly); recorded for the same documentation parity as Seedance/Veo.
       referenceField: "image_url",
       maxReferences: 4,
+      referenceDimension: null,
+      referenceFormat: "png",
+    },
+  });
+}
+
+/**
+ * The one voice Cloudflare's ElevenLabs pages list: every `voice_id` example
+ * and request sample on the TTS model pages uses it, and there is no voice
+ * listing endpoint on Cloudflare. More voices are added only from a page that
+ * lists them.
+ * https://developers.cloudflare.com/ai/models/elevenlabs/eleven-v3/
+ */
+const premadeVoices: readonly MediaAudioVoice[] = Object.freeze([
+  Object.freeze({ id: "JBFqnCBsd6RMkjVDRZzb", label: "Default voice" }),
+]);
+
+/**
+ * An ElevenLabs speech model. Text is at most 10,000 characters and a
+ * `voice_id` is required (each model's `schema-input.json`); the rate is the
+ * per-character price on its Cloudflare page, 1 USD = 100,000 milliunits.
+ * https://developers.cloudflare.com/ai/models/elevenlabs/eleven-v3/
+ * https://developers.cloudflare.com/ai/models/elevenlabs/eleven-multilingual-v2/
+ */
+function speechModel(
+  id: MediaAudioModelId,
+  label: string,
+  tier: MediaModelTier,
+  milliunitsPerCharacter: number,
+): MediaModel {
+  return audioModel(id, label, tier, 10_000, {
+    provider: "elevenlabs",
+    mode: "speech",
+    voices: premadeVoices,
+    defaultVoiceId: premadeVoices[0]?.id ?? null,
+    seconds: null,
+    milliunitsPerUnit: milliunitsPerCharacter,
+  });
+}
+
+/**
+ * Eleven Music v2: `music_length_ms` runs 3,000 through 600,000 and the page
+ * lists $0.0025 per output second (250 milliunits). The prompt has no
+ * documented limit, so the retained 2,048 host cap applies. The model is run
+ * with a length always set, so the quote is the length asked for.
+ * https://developers.cloudflare.com/ai/models/elevenlabs/music-v2/
+ */
+function musicModel(): MediaModel {
+  return audioModel(
+    mediaAudioModelIdSchema.enum.music,
+    "Eleven Music v2",
+    "premium",
+    UNDOCUMENTED_PROMPT_LENGTH,
+    {
+      provider: "elevenlabs",
+      mode: "music",
+      voices: Object.freeze([]),
+      defaultVoiceId: null,
+      seconds: Object.freeze({ min: 3, max: 600, default: 30 }),
+      milliunitsPerUnit: 250,
+    },
+  );
+}
+
+function audioModel(
+  id: MediaAudioModelId,
+  label: string,
+  tier: MediaModelTier,
+  maxPromptLength: number,
+  audio: MediaAudioModel,
+): MediaModel {
+  return freezeModel({
+    id,
+    label,
+    tier,
+    maxPromptLength,
+    kind: "audio",
+    audio: Object.freeze(audio),
+    input: {
+      transport: "json",
+      dimensions: "none",
+      maxDimension: null,
+      maxDimensionDocumented: false,
+      // Audio has no dimensions; the shared wire grammar still requires a
+      // positive default, and nothing reads it for an audio model.
+      defaultWidth: 1,
+      defaultHeight: 1,
+      steps: "fixed",
+      maxSteps: null,
+      defaultSteps: null,
+      referenceField: null,
+      maxReferences: 0,
       referenceDimension: null,
       referenceFormat: "png",
     },
@@ -921,9 +1118,23 @@ const models: readonly MediaModel[] = Object.freeze([
     ],
   ),
   minimaxVideoModel(),
+  // ElevenLabs on Unified Billing: URL results, like the video models.
+  speechModel(
+    mediaAudioModelIdSchema.enum.multilingual,
+    "Eleven Multilingual v2: natural speech",
+    "balanced",
+    10,
+  ),
+  speechModel(
+    mediaAudioModelIdSchema.enum.v3,
+    "Eleven v3: expressive speech",
+    "premium",
+    10,
+  ),
+  musicModel(),
 ]);
 
-/** The Fungi gateway provider's own immutable image and video model catalog. */
+/** The Fungi gateway provider's own immutable image, video and audio model catalog. */
 export const mediaModels: readonly MediaModel[] = models;
 /**
  * One catalogue entry. Same grammar as the gateway's wire entry, except that a
@@ -933,11 +1144,18 @@ export const mediaModels: readonly MediaModel[] = models;
 export const mediaCatalogueModelSchema = mediaModelSchema
   .unwrap()
   .extend({
+    /** Speech or music constraints; a host's catalogue omits it unless it lists audio models. */
+    audio: mediaAudioSchema.unwrap().nullable().default(null),
     /** Video length constraints, or null for a still-image model. */
     video: mediaVideoSchema
       .unwrap()
       .unwrap()
       .extend({
+        /** Audio reference limits; a host's catalogue omits it unless its model takes audio references. */
+        audioReferences: mediaVideoSchema
+          .unwrap()
+          .unwrap()
+          .shape.audioReferences.default(null),
         /** Provider translation family, or `host` for a host-injected provider. */
         provider: z.enum({
           /** Seedance integer duration and data-URI image fields. */
@@ -983,6 +1201,10 @@ export const mediaCatalogueSchema = z
         report(
           `${model.id} must carry video bounds exactly when kind is video`,
         );
+      if ((model.kind === "audio") !== (model.audio !== null))
+        report(
+          `${model.id} must carry audio bounds exactly when kind is audio`,
+        );
       const video = model.video;
       if (video === null) return;
       if (
@@ -1027,6 +1249,23 @@ export const parseMediaCatalogue = (raw: unknown): MediaCatalogue => {
 
 /** List the gateway provider's models in catalog order. */
 export const listMediaModels = (): readonly MediaModel[] => mediaModels;
+/** A catalog entry that is a picture or video model. */
+export type MediaPictureModel = Omit<MediaModel, "kind" | "audio"> & {
+  /** Still-image or video generation; never audio. */
+  readonly kind: "image" | "video";
+  /** Always null for a picture or video model. */
+  readonly audio: null;
+};
+/**
+ * The gateway models Apps and browsers list and pick from: pictures and video.
+ * The Agar and Prints catalog decoders know no `audio` kind yet, and one unknown
+ * row fails the whole list, so audio models are generated by id until the
+ * Prints audio UI lands and lists them.
+ */
+export const listPictureMediaModels = (): readonly MediaPictureModel[] =>
+  mediaModels.filter(
+    (model): model is MediaPictureModel => model.kind !== "audio",
+  );
 /** Find a model in the Fungi gateway's own catalogue; gateway-internal code never sees a custom provider's models. */
 export const getGatewayModel = (id: string): MediaModel | undefined =>
   mediaModels.find((model) => model.id === id);
@@ -1039,8 +1278,8 @@ export const getMediaModel = (
 
 /** Invalid generation settings or unsupported model parameters. */
 export class MediaSettingsError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = "MediaSettingsError";
   }
 }

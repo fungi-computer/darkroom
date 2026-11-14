@@ -1,9 +1,11 @@
 import * as z from "zod";
 import { reportCatchFailure } from "./failure.js";
+import type { MediaAudioReferenceBytes } from "./audio-reference-types.js";
 import { referenceImageSizeIsValid } from "./reference-image-size.js";
 import {
   getGatewayModel,
   getMediaModel,
+  mediaAudioModelIdSchema,
   MAX_REFERENCE_COUNT,
   MediaSettingsError,
   mediaModels,
@@ -12,6 +14,8 @@ import {
   mediaVideoAspectRatioSchema,
   mediaVideoReferenceRoleSchema,
   MAX_MEDIA_PROMPT_LENGTH,
+  type MediaAudioModel,
+  type MediaModel,
   type MediaVideoReferenceRole,
   type MediaCatalogue,
   type MediaVideoResolution,
@@ -21,11 +25,20 @@ import {
 export { mediaFailureStageSchema } from "./execution-error.js";
 
 export {
+  MAX_AUDIO_REFERENCE_BODY_BYTES,
+  MAX_AUDIO_REFERENCE_BYTES,
+} from "./audio-reference-types.js";
+export type {
+  AudioReferenceMimeType,
+  MediaAudioReferenceBytes,
+} from "./audio-reference-types.js";
+export {
   MAX_MEDIA_PROMPT_LENGTH,
   getMediaModel,
   getGatewayModel,
   MAX_REFERENCE_COUNT,
   listMediaModels,
+  listPictureMediaModels,
   mediaCatalogueSchema,
   mediaCatalogueModelSchema,
   parseMediaCatalogue,
@@ -41,11 +54,16 @@ export {
   mediaVideoReferenceRoleSchema,
   mediaVideoFormatSchema,
   mediaVideoSchema,
+  mediaAudioModelIdSchema,
+  mediaAudioSchema,
+  mediaAudioVoiceSchema,
+  AUDIO_CHARACTER_BLOCK,
 } from "./model-catalog.js";
 export type {
   MediaCatalogue,
   MediaCatalogueModel,
   MediaModel,
+  MediaPictureModel,
   MediaModelInput,
   MediaModelTier,
   MediaVideoModelId,
@@ -54,6 +72,9 @@ export type {
   MediaVideoReferenceRole,
   MediaVideoModel,
   MediaVideoFormat,
+  MediaAudioModelId,
+  MediaAudioModel,
+  MediaAudioVoice,
 } from "./model-catalog.js";
 
 /** A reference file selected by the host, with its destination identity and path. */
@@ -69,8 +90,8 @@ export type MediaReference = Readonly<{
 export type ImageFormat = "png" | "jpeg" | "gif" | "webp";
 /** MIME type corresponding to a supported image encoding. */
 export type ImageMimeType = `image/${ImageFormat}`;
-/** A saved generation: an image, or an MP4 from a video model. */
-export type MediaOutputFormat = ImageFormat | "mp4";
+/** A saved generation: an image, an MP4 from a video model, or an MP3 from an audio model. */
+export type MediaOutputFormat = ImageFormat | "mp4" | "mp3";
 /** Decoded reference bytes and the dimensions sent to the provider. */
 export type MediaReferenceBytes = Readonly<{
   /** Decoded reference image bytes. */
@@ -90,14 +111,16 @@ export type MediaGenerationSettings = Readonly<{
   model: string;
   /** Trimmed generation prompt. */
   prompt: string;
-  /** Requested image width or nominal video resolution/aspect selector. */
-  width: number;
-  /** Requested image height or nominal video resolution/aspect selector. */
-  height: number;
+  /** Requested image width or nominal video resolution/aspect selector; absent for audio. */
+  width?: number;
+  /** Requested image height or nominal video resolution/aspect selector; absent for audio. */
+  height?: number;
   /** Model-specific inference steps. */
   steps?: number;
-  /** Video models only: output length in whole seconds. */
+  /** Video and music models only: output length in whole seconds. */
   durationSeconds?: number;
+  /** Speech models only: the catalog voice that reads the prompt. */
+  voiceId?: string;
   /** Video resolution selector, normalized from the catalog. */
   resolution?: MediaVideoResolution;
   /** Requested video aspect; a first image may override it upstream. */
@@ -106,6 +129,8 @@ export type MediaGenerationSettings = Readonly<{
   generateAudio?: boolean;
   /** Host-authorized reference files. */
   references?: readonly MediaReference[];
+  /** Host-authorized reference audio clips; video models declaring `audioReferences` only. */
+  audioReferences?: readonly MediaReference[];
 }>;
 
 /**
@@ -117,6 +142,7 @@ export type MediaProvider = (
   references: readonly MediaReferenceBytes[],
   signal?: AbortSignal,
   outputFormat?: "png" | "jpeg" | "webp",
+  audioReferences?: readonly MediaAudioReferenceBytes[],
 ) => Promise<
   Readonly<{
     /** Generated output bytes. */
@@ -197,6 +223,9 @@ const normalizeReference = (value: {
   return { ...reference, role: value.role };
 };
 
+/** Schema ceiling for audio reference lists; each model's own `audioReferences.max` is enforced after parsing. */
+export const MAX_AUDIO_REFERENCE_COUNT = 10;
+
 /** Structural wire grammar for one Media generation request. */
 export const mediaGenerationSettingsSchema = z
   .object({
@@ -204,14 +233,16 @@ export const mediaGenerationSettingsSchema = z
     model: z.string().min(1).max(256),
     /** Generation prompt; each model's `maxPromptLength` is enforced on top of this ceiling. */
     prompt: z.string().min(1).max(MAX_MEDIA_PROMPT_LENGTH),
-    /** Requested image width or nominal video selector, not decoded MP4 dimensions. */
-    width: z.number().int().min(1).max(5_040),
-    /** Requested image height or nominal video selector, not decoded MP4 dimensions. */
-    height: z.number().int().min(1).max(5_040),
+    /** Requested image width or nominal video selector; absent for audio. */
+    width: z.number().int().min(1).max(5_040).optional(),
+    /** Requested image height or nominal video selector; absent for audio. */
+    height: z.number().int().min(1).max(5_040).optional(),
     /** Model-specific inference step count. */
     steps: z.number().int().optional(),
-    /** Requested video length in whole seconds. */
+    /** Requested video or music length in whole seconds. */
     durationSeconds: z.number().int().optional(),
+    /** Speech models only: a premade voice from the catalog; the default when omitted. */
+    voiceId: z.string().min(1).max(64).optional(),
     /** Video resolution; must match the nominal width/height selector. */
     resolution: mediaVideoResolutionSchema.optional(),
     /** Video aspect; must match the nominal width/height selector. */
@@ -233,6 +264,20 @@ export const mediaGenerationSettingsSchema = z
           .strict(),
       )
       .max(MAX_REFERENCE_COUNT)
+      .optional(),
+    /** Host-authorized reference audio clips; only a model declaring `audioReferences` takes them. */
+    audioReferences: z
+      .array(
+        z
+          .object({
+            /** Host-admitted destination or reference identity. */
+            computerId: z.string().min(1).max(256),
+            /** Fixed reference file path. */
+            path: z.string().min(1).max(4_096),
+          })
+          .strict(),
+      )
+      .max(MAX_AUDIO_REFERENCE_COUNT)
       .optional(),
   })
   .strict();
@@ -259,6 +304,20 @@ export const mediaGenerationSelectionSchema =
       )
       .max(MAX_REFERENCE_COUNT)
       .optional(),
+    /** Host-authorized reference audio clips. */
+    audioReferences: z
+      .array(
+        z
+          .object({
+            /** Omit for the selected Computer; the host authorizes every named Computer. */
+            computerId: z.string().min(1).max(256).optional(),
+            /** Fixed reference file path. */
+            path: z.string().min(1).max(4_096),
+          })
+          .strict(),
+      )
+      .max(MAX_AUDIO_REFERENCE_COUNT)
+      .optional(),
   });
 /** Generation settings with reference paths resolved by an admitting host. */
 export type MediaGenerationSelection = z.output<
@@ -267,10 +326,11 @@ export type MediaGenerationSelection = z.output<
 type MutableMediaGenerationSettings<Reference> = {
   model: string;
   prompt: string;
-  width: number;
-  height: number;
+  width?: number;
+  height?: number;
   steps?: number;
   durationSeconds?: number;
+  voiceId?: string;
   /** Video resolution selector, normalized from the catalog. */
   resolution?: MediaVideoResolution;
   /** Requested video aspect; a first image may override it upstream. */
@@ -278,7 +338,19 @@ type MutableMediaGenerationSettings<Reference> = {
   /** Audio selection; omitted for Seedance when its default is undocumented. */
   generateAudio?: boolean;
   references?: readonly Reference[];
+  audioReferences?: readonly Reference[];
 };
+
+/** Mutable caller input for already-normalized settings, so they can be validated again. */
+export const mediaSettingsInput = (
+  settings: MediaGenerationSettings,
+): MediaGenerationSettingsInput => ({
+  ...settings,
+  references: settings.references?.map((reference) => ({ ...reference })),
+  audioReferences: settings.audioReferences?.map((reference) => ({
+    ...reference,
+  })),
+});
 
 /**
  * Validate caller settings against `catalogue`, the active provider's model
@@ -303,7 +375,7 @@ export const validateMediaGenerationSelection = (
   raw: z.input<typeof mediaGenerationSelectionSchema>,
   catalogue: MediaCatalogue = mediaModels,
 ): Readonly<
-  Omit<MediaGenerationSettings, "references"> & {
+  Omit<MediaGenerationSettings, "references" | "audioReferences"> & {
     /** Host-authorized reference images. */
     references?: readonly Readonly<{
       /** Fixed destination or reference file path. */
@@ -313,6 +385,13 @@ export const validateMediaGenerationSelection = (
       /** Video-only reference role. */
       role?: MediaVideoReferenceRole;
     }>[];
+    /** Host-authorized reference audio clips. */
+    audioReferences?: readonly Readonly<{
+      /** Fixed reference file path. */
+      path: string;
+      /** Optional reference Computer; authorization remains host-owned. */
+      computerId?: string;
+    }>[];
   }
 > => {
   const parsed = mediaGenerationSelectionSchema.safeParse(raw);
@@ -320,7 +399,11 @@ export const validateMediaGenerationSelection = (
     throw new MediaSettingsError("generation settings are invalid");
   return normalizeGenerationSettings(
     parsed.data,
-    (reference) => {
+    (reference: {
+      path: string;
+      computerId?: string | undefined;
+      role?: MediaVideoReferenceRole | undefined;
+    }) => {
       const path = requiredString(reference.path, "reference path");
       const selection =
         reference.computerId === undefined
@@ -340,9 +423,14 @@ function normalizeGenerationSettings<
   },
   Reference extends { path: string; role?: MediaVideoReferenceRole },
 >(
-  input: Omit<z.output<typeof mediaGenerationSettingsSchema>, "references"> & {
+  input: Omit<
+    z.output<typeof mediaGenerationSettingsSchema>,
+    "references" | "audioReferences"
+  > & {
     /** Host-authorized reference images. */
     references?: readonly InputReference[] | undefined;
+    /** Host-authorized reference audio clips; they carry no role. */
+    audioReferences?: readonly InputReference[] | undefined;
   },
   normalize: (reference: InputReference) => Reference,
   catalogue: MediaCatalogue,
@@ -356,6 +444,26 @@ function normalizeGenerationSettings<
     throw new MediaSettingsError(
       `${model.id} prompt is ${String(prompt.length)} characters; its limit is ${String(model.maxPromptLength)}`,
     );
+  if (model.audio !== null) {
+    if (
+      input.width !== undefined ||
+      input.height !== undefined ||
+      input.steps !== undefined ||
+      input.resolution !== undefined ||
+      input.aspectRatio !== undefined ||
+      input.generateAudio !== undefined ||
+      input.references !== undefined ||
+      input.audioReferences !== undefined
+    )
+      throw new MediaSettingsError(
+        `${model.id} takes only a prompt${model.audio.mode === "speech" ? " and a voice" : " and a length"}`,
+      );
+    return normalizeAudioSettings(model, model.audio, prompt, input);
+  }
+  if (input.voiceId !== undefined)
+    throw new MediaSettingsError(`${model.id} does not take a voice`);
+  if (input.width === undefined || input.height === undefined)
+    throw new MediaSettingsError(`${model.id} needs a width and a height`);
   const maximumDimension = model.video === null ? 4_096 : 5_040;
   const width = boundedInteger(input.width, "width", 1, maximumDimension);
   const height = boundedInteger(input.height, "height", 1, maximumDimension);
@@ -507,6 +615,55 @@ function normalizeGenerationSettings<
   }
   if (references !== undefined)
     normalized.references = Object.freeze(references);
+  if (input.audioReferences !== undefined && input.audioReferences.length > 0) {
+    const limits = model.video?.audioReferences ?? null;
+    if (limits === null)
+      throw new MediaSettingsError(
+        `${model.label} does not take audio references`,
+      );
+    if (input.audioReferences.length > limits.max)
+      throw new MediaSettingsError(
+        `${model.label} takes up to ${String(limits.max)} audio references`,
+      );
+    normalized.audioReferences = Object.freeze(
+      input.audioReferences.map(normalize),
+    );
+  }
+  return Object.freeze(normalized);
+}
+
+/** Speech takes a catalog voice; music takes a bounded length. Neither takes references. */
+function normalizeAudioSettings<Reference>(
+  model: Pick<MediaModel, "id">,
+  audio: MediaAudioModel,
+  prompt: string,
+  input: Pick<MediaGenerationSettingsInput, "durationSeconds" | "voiceId">,
+): Readonly<MutableMediaGenerationSettings<Reference>> {
+  const normalized: MutableMediaGenerationSettings<Reference> = {
+    model: model.id,
+    prompt,
+  };
+  if (audio.mode === "speech") {
+    if (input.durationSeconds !== undefined)
+      throw new MediaSettingsError(`${model.id} does not take a duration`);
+    const voiceId = input.voiceId ?? audio.defaultVoiceId;
+    if (voiceId === null || !audio.voices.some((voice) => voice.id === voiceId))
+      throw new MediaSettingsError(
+        `${model.id} accepts only these voices: ${audio.voices.map((voice) => voice.id).join(", ")}`,
+      );
+    normalized.voiceId = voiceId;
+    return Object.freeze(normalized);
+  }
+  if (input.voiceId !== undefined)
+    throw new MediaSettingsError(`${model.id} does not take a voice`);
+  if (audio.seconds === null)
+    throw new MediaSettingsError(`${model.id} is missing its length bounds`);
+  normalized.durationSeconds = boundedInteger(
+    input.durationSeconds ?? audio.seconds.default,
+    "durationSeconds",
+    audio.seconds.min,
+    audio.seconds.max,
+  );
   return Object.freeze(normalized);
 }
 
@@ -521,6 +678,17 @@ export const mediaVideoReferenceSchema = z.lazy(() =>
 );
 /** One path-only video reference. */
 export type MediaVideoReference = z.output<typeof mediaVideoReferenceSchema>;
+/** Path-only audio reference; the host supplies authority and reads its bytes. */
+export const mediaAudioReferenceSelectionSchema = z.lazy(() =>
+  z.strictObject({
+    /** Selected audio file path, trimmed and nonblank after validation. */
+    path: z.string().min(1).max(4_096),
+  }),
+);
+/** One path-only audio reference. */
+export type MediaAudioReferenceSelection = z.output<
+  typeof mediaAudioReferenceSelectionSchema
+>;
 /** Neutral video selection; model-specific combinations are checked by validateMediaVideoSelection. */
 export const mediaVideoSelectionSchema = z.lazy(() =>
   z.strictObject({
@@ -541,6 +709,11 @@ export const mediaVideoSelectionSchema = z.lazy(() =>
     references: z
       .array(mediaVideoReferenceSchema)
       .max(MAX_VIDEO_REFERENCE_COUNT)
+      .optional(),
+    /** Reference audio clips, for a model declaring `audioReferences` (Seedance 2.5: 10 clips, 30 seconds). */
+    audioReferences: z
+      .array(mediaAudioReferenceSelectionSchema)
+      .max(MAX_AUDIO_REFERENCE_COUNT)
       .optional(),
   }),
 );
@@ -575,6 +748,8 @@ export type MediaVideoSelection = Readonly<{
   generateAudio?: boolean;
   /** Normalized paths and required frame/reference roles. */
   references?: readonly Readonly<MediaVideoReference>[];
+  /** Normalized reference audio paths. */
+  audioReferences?: readonly Readonly<MediaAudioReferenceSelection>[];
 }>;
 type MutableMediaVideoSelection = {
   -readonly [Field in keyof MediaVideoSelection]: MediaVideoSelection[Field];
@@ -624,8 +799,32 @@ export function validateMediaVideoSelection(
         Object.freeze(mediaVideoReferenceSchema.parse(reference)),
       ),
     );
+  if (normalized.audioReferences !== undefined)
+    selection.audioReferences = Object.freeze(
+      normalized.audioReferences.map((reference) =>
+        Object.freeze(mediaAudioReferenceSelectionSchema.parse(reference)),
+      ),
+    );
   return Object.freeze(selection);
 }
+
+/** Neutral audio selection: speech takes a voice, music a length; model-specific limits are checked by validateMediaGenerationSettings. */
+export const mediaAudioSelectionSchema = z.lazy(() =>
+  z.strictObject({
+    /** Verified catalog audio model identifier. */
+    model: mediaAudioModelIdSchema,
+    /** Text to speak, or a description of the music; the model's `maxPromptLength` is enforced on top of this ceiling. */
+    prompt: z.string().min(1).max(MAX_MEDIA_PROMPT_LENGTH),
+    /** Speech only: a premade catalog voice; the model default when omitted. */
+    voiceId: z.string().min(1).max(64).optional(),
+    /** Music only: whole seconds, 3 through 600; 30 when omitted. */
+    durationSeconds: z.number().int().min(3).max(600).optional(),
+  }),
+);
+/** Caller audio selection before defaults and model-specific refinements. */
+export type MediaAudioSelectionInput = z.input<
+  typeof mediaAudioSelectionSchema
+>;
 
 /** Host-authorized reader for decoded reference images. */
 export type MediaReferenceReader = Readonly<{
@@ -739,6 +938,8 @@ export const buildProviderInput = (
       prompt: settings.prompt,
     };
     if (model.input.dimensions === "own") {
+      if (settings.width === undefined || settings.height === undefined)
+        throw new MediaSettingsError(`${model.id} needs a width and a height`);
       body.width = settings.width;
       body.height = settings.height;
     }
@@ -1127,6 +1328,9 @@ export function estimateVideoMilliunits(
       references: settings.references?.map((reference) => ({
         path: reference.path,
         role: reference.role,
+      })),
+      audioReferences: settings.audioReferences?.map((reference) => ({
+        path: reference.path,
       })),
     },
     catalogue,

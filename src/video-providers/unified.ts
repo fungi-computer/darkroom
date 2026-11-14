@@ -1,6 +1,10 @@
 import { MediaSettingsError } from "../model-catalog.js";
 import { gatewayOutputSchema } from "../gateway-wire.js";
-import { imageBase64, imageDataUri } from "./reference-encoding.js";
+import {
+  audioDataUri,
+  imageBase64,
+  imageDataUri,
+} from "./reference-encoding.js";
 import type { VideoProviderAdapter } from "./types.js";
 
 export type UnifiedGatewayInput = {
@@ -12,6 +16,7 @@ export type UnifiedGatewayInput = {
   image?: string;
   last_frame_image?: string;
   reference_images?: string[];
+  reference_audios?: string[];
   image_input?: string;
 };
 
@@ -21,7 +26,7 @@ export type UnifiedGatewayInput = {
  * provider, handled inline below.
  */
 export const unifiedVideoAdapter: VideoProviderAdapter = {
-  buildInput(checked, references, model) {
+  buildInput(checked, references, model, audioReferences) {
     const veo = model.video?.provider === "veo";
     const input: UnifiedGatewayInput = {
       prompt: checked.prompt,
@@ -48,6 +53,8 @@ export const unifiedVideoAdapter: VideoProviderAdapter = {
         throw new MediaSettingsError("video reference role was not admitted");
     });
     if (referenceImages.length > 0) input.reference_images = referenceImages;
+    if (audioReferences.length > 0)
+      input.reference_audios = audioReferences.map(audioDataUri);
     return input;
   },
   decodeResultUrl(providerValue) {
