@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as Schema from "effect/Schema";
-import { listMediaModels, listPictureMediaModels } from "../src/index.js";
+import { listMediaModels } from "../src/index.js";
 import {
   appMediaGenerationResultSchema,
   destinationSchema,
@@ -146,7 +146,7 @@ describe("App broker media contract leaves", () => {
 });
 describe("Agar-owned video wire and Darkroom host catalog", () => {
   it("decodes the actual host catalog, including every video price and role", () => {
-    for (const model of listPictureMediaModels())
+    for (const model of listMediaModels())
       expect(decode(mediaModelSchema, model)).toEqual(model);
   });
   it("preserves video selectors and every reference role when normalizing an admitted selection", () => {

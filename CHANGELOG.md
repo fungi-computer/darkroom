@@ -1,5 +1,22 @@
 # @fungi.computer/darkroom
 
+## 0.9.0
+
+### Minor Changes
+
+- Changes since 0.8.0:
+
+  - fix(prints): keep the quote test on the full catalog and regenerate Darkroom
+    docs after merging #731
+  - fix(prints,caps): audio polish from the wired re-review
+  - feat(agar,prints): carry audio models, voices and MP3 results through the
+    Media contract
+
+### Patch Changes
+
+- Updated dependencies
+  - @fungi.computer/agar@0.15.0
+
 ## 0.8.0
 
 ### Minor Changes

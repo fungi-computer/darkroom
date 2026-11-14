@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   getMediaModel,
   listMediaModels,
-  listPictureMediaModels,
   parseMediaCatalogue,
   validateMediaGenerationSettings,
 } from "../src/index.js";
@@ -61,14 +60,6 @@ describe("ElevenLabs audio models", () => {
       seconds: { min: 3, max: 600, default: 30 },
       milliunitsPerUnit: 250,
     });
-  });
-
-  it("keeps audio out of the picture and video listing", () => {
-    expect(listPictureMediaModels().map((model) => model.id)).toEqual(
-      listMediaModels()
-        .filter((model) => model.kind !== "audio")
-        .map((model) => model.id),
-    );
   });
 
   it("normalizes speech to its default voice and refuses everything else", () => {

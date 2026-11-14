@@ -22,7 +22,7 @@ import { runMediaGeneration } from "./media-generation.js";
 import { quoteMediaGeneration } from "./media-quote.js";
 import {
   validateMediaGenerationSettings,
-  listPictureMediaModels,
+  listMediaModels,
   mediaGenerationSettingsSchema,
   mediaRequestedImageFormatSchema,
   MediaSettingsError,
@@ -505,7 +505,7 @@ export function createMediaService(host: MediaServiceHost) {
   const app = new Hono();
   app.get("/models", () =>
     Response.json(
-      (host.catalogue ?? listPictureMediaModels())
+      (host.catalogue ?? listMediaModels())
         .map((model) =>
           host.destination.readReference !== undefined ||
           model.input.maxReferences === 0
