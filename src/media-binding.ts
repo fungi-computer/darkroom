@@ -4,7 +4,7 @@ import { pending } from "@fungi.computer/agar/backend-definition";
 import { mediaRequestIdSchema } from "@fungi.computer/agar/media-request-id";
 import { mediaLibraryPathSchema } from "@fungi.computer/agar/media-library";
 import {
-  getMediaModel,
+  getGatewayModel,
   mediaGenerationSelectionSchema,
   mediaRequestedImageFormatSchema,
   mediaVideoSelectionSchema,
@@ -50,7 +50,7 @@ export const mediaImageBindingInputSchema = z.strictObject({
         .optional(),
     })
     .refine(
-      (settings) => getMediaModel(settings.model)?.kind === "image",
+      (settings) => getGatewayModel(settings.model)?.kind === "image",
       "Select an image model from listModels",
     ),
   /** Requested image encoding, validated against the selected model. */
@@ -159,7 +159,7 @@ export function mediaBindingRequest(
       ? validateMediaGenerationSelection(input.settings)
       : validateMediaVideoSelection(input.settings);
   const { references, ...settings } = selected;
-  const model = getMediaModel(input.settings.model);
+  const model = getGatewayModel(input.settings.model);
   const format =
     input.kind === "video"
       ? "mp4"

@@ -133,6 +133,135 @@ fact.
 Video generation runs through the operation's alarm. A 202 response tells you to
 retry the same request ID after the supplied `Retry-After` delay.
 
+## Bring your own provider and models
+
+A provider owns its model list. The built-in Fungi gateway provider carries
+today's catalogue; a host that injects its own `MediaProvider` also supplies
+that provider's catalogue, as data decoded with `parseMediaCatalogue`. Darkroom
+validates every request against the active provider's catalogue, so `fal-ai/...`
+ids are accepted by your provider and refused by the gateway's.
+
+Each entry carries the per-model bounds the validator enforces: prompt length,
+dimensions or exact sizes, steps, reference counts, and for video the durations,
+resolution/aspect formats and per-second prices. Mark a video model's
+`video.provider` as `"host"`: your provider owns that model's wire grammar.
+
+```ts
+import {
+  parseMediaCatalogue,
+  type MediaProvider,
+} from "@fungi.computer/darkroom";
+import { createMediaService } from "@fungi.computer/darkroom/server";
+import { MediaOperationDO } from "@fungi.computer/darkroom/cloudflare";
+
+declare const FAL_KEY: string; // your fal.ai key, from the host environment
+
+// Decoded once; throws MediaSettingsError on a malformed or contradictory entry.
+export const falCatalogue = parseMediaCatalogue([
+  {
+    id: "fal-ai/minimax/hailuo-2.3/standard/image-to-video",
+    label: "Hailuo 2.3 Standard",
+    kind: "video",
+    tier: "draft",
+    outputFormats: [],
+    maxPromptLength: 2_000,
+    sizes: ["1366x768"],
+    input: {
+      transport: "json",
+      dimensions: "own",
+      maxDimension: 1366,
+      maxDimensionDocumented: false,
+      defaultWidth: 1366,
+      defaultHeight: 768,
+      steps: "fixed",
+      maxSteps: null,
+      defaultSteps: null,
+      referenceField: "image_url",
+      maxReferences: 1,
+      referenceDimension: null,
+      referenceFormat: "png",
+    },
+    video: {
+      minSeconds: 6,
+      maxSeconds: 10,
+      defaultSeconds: 6,
+      durations: [6, 10],
+      provider: "host",
+      formats: [
+        { resolution: "768p", aspectRatio: "16:9", width: 1366, height: 768 },
+      ],
+      defaultResolution: "768p",
+      defaultAspectRatio: "16:9",
+      supportsAudio: false,
+      defaultGenerateAudio: null,
+      referenceRoles: ["first-frame"],
+      maxReferenceImages: 0,
+      referenceResolutions: [],
+      prices: [
+        {
+          resolution: "768p",
+          silentMilliunitsPerSecond: 3_000,
+          audioMilliunitsPerSecond: 3_000,
+        },
+      ],
+    },
+  },
+]);
+
+// Settings arrive already validated against falCatalogue.
+export const falProvider: MediaProvider = async (
+  settings,
+  references,
+  signal,
+) => {
+  const first = references[0];
+  if (first === undefined)
+    throw new Error("image-to-video needs a first frame");
+  const queued = await fetch(`https://queue.fal.run/${settings.model}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Key ${FAL_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      prompt: settings.prompt,
+      duration: String(settings.durationSeconds),
+      image_url: `data:image/${first.format};base64,${btoa(String.fromCharCode(...first.bytes))}`,
+    }),
+    signal: signal ?? null,
+  });
+  // ...poll the queue, download the MP4 and return it.
+  return {
+    bytes: new Uint8Array(await (await queued.blob()).arrayBuffer()),
+    format: "mp4",
+  };
+};
+
+// The durable job engine runs your provider from its alarm, so it needs the
+// same catalogue.
+export class FalMediaOperationDO extends MediaOperationDO {
+  protected override mediaProvider() {
+    return falProvider;
+  }
+  protected override mediaCatalogue() {
+    return falCatalogue;
+  }
+}
+
+// In the request path, pass the catalogue and your own quote beside the provider.
+const service = createMediaService({
+  // scope, operations, metering and destination as in the quick start
+  provider: falProvider,
+  catalogue: falCatalogue,
+  estimate: (settings) => 3_000 * (settings.durationSeconds ?? 6),
+  // ...
+});
+```
+
+`GET /models` lists `falCatalogue`. A request for a model outside it, or
+settings outside its bounds, is refused before billing or dispatch. The
+gateway's own models are refused by this provider the same way.
+
 ## API reference
 
 | Import                                         | Purpose                                                                        |

@@ -36,6 +36,7 @@ const generatedBytes = new Uint8Array([1, 2, 3]);
 const refusalMessages = {
   insufficient_credits: "Your studio balance needs a refill.",
   denied: "Your studio does not allow this purchase.",
+  daily_limit_reached: "Your studio is at its daily limit.",
 };
 
 function admit(owner: MediaOperationOwner, requestId = "request-a") {

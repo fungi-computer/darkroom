@@ -91,6 +91,7 @@ describe("Images reference fitting", () => {
         refusalMessages: {
           insufficient_credits: "Refill",
           denied: "Denied",
+          daily_limit_reached: "Daily limit",
         },
         destination: {
           authorize: () => Promise.resolve(),

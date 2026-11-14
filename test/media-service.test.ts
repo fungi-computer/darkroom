@@ -38,8 +38,8 @@ const reference: MediaReferenceBytes = {
 };
 
 describe("retained Media model boundary", () => {
-  it("exposes fourteen immutable model definitions", () => {
-    expect(listMediaModels()).toHaveLength(14);
+  it("exposes fifteen immutable model definitions", () => {
+    expect(listMediaModels()).toHaveLength(15);
     expect(listMediaModels().map(({ id }) => id)).toEqual([
       "@cf/black-forest-labs/flux-1-schnell",
       "@cf/black-forest-labs/flux-2-klein-4b",
@@ -48,6 +48,7 @@ describe("retained Media model boundary", () => {
       "@cf/leonardo/lucid-origin",
       "@cf/leonardo/phoenix-1.0",
       "openai/gpt-image-2",
+      "bytedance/seedream-5-pro",
       "bytedance/seedance-2.5",
       "bytedance/seedance-2.0",
       "bytedance/seedance-2.0-fast",

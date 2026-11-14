@@ -25,6 +25,8 @@ export const mediaFailureSchema = z.strictObject({
   code: z.enum({
     /** Host admission or Computer access was denied. */
     CAPABILITY_DENIED: "CAPABILITY_DENIED",
+    /** The host's daily media spending limit is used up until 00:00 UTC. */
+    DAILY_LIMIT_REACHED: "DAILY_LIMIT_REACHED",
     /** Host billing did not admit this attempt. */
     INSUFFICIENT_CREDIT: "INSUFFICIENT_CREDIT",
     /** The host could not complete generation or saving. */

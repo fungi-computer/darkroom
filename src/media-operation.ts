@@ -98,9 +98,12 @@ export function executeMediaOperation(input: MediaExecution) {
     const billed = mediaUnits(
       validateMediaGenerationSettings(
         mediaGenerationSettingsSchema.strip().parse(input.request),
+        input.catalogue,
       ),
+      input.catalogue,
     );
-    const background = getMediaModel(input.request.model)?.kind === "video";
+    const background =
+      getMediaModel(input.request.model, input.catalogue)?.kind === "video";
     /** Best-effort release; true proves customer settlement, not supplier billing. */
     const settleNothing = () =>
       metering === null

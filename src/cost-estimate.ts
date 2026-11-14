@@ -1,5 +1,5 @@
 import {
-  getMediaModel,
+  getGatewayModel,
   MAX_REFERENCE_COUNT,
   MediaSettingsError,
 } from "./model-catalog.js";
@@ -63,7 +63,7 @@ const checked = (modelId: string, params: ImageParams): ImageParams => {
     return invalid("dimensions, steps, or references are invalid");
   const candidate = parsed.data;
   const references = candidate.references ?? [];
-  const model = getMediaModel(modelId);
+  const model = getGatewayModel(modelId);
   if (model === undefined)
     throw new MediaSettingsError(`Image cost unknown for model "${modelId}"`);
   if (references.length > model.input.maxReferences)

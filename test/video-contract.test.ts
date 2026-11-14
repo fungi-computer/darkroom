@@ -486,6 +486,7 @@ describe("video refinements and provider prices", () => {
           refusalMessages: {
             insufficient_credits: "refill",
             denied: "denied",
+            daily_limit_reached: "daily limit",
           },
           destination: {
             authorize: () => Promise.resolve(),

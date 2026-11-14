@@ -528,6 +528,101 @@ describe("GPT Image 2 sizes", () => {
   });
 });
 
+describe("Seedream 5 Pro", () => {
+  const id = "bytedance/seedream-5-pro";
+  const sized = (size: string, prompt = "a mushroom knight") => {
+    const [width, height] = size.split("x").map(Number);
+    return validateMediaGenerationSettings({
+      model: id,
+      prompt,
+      width: width ?? 0,
+      height: height ?? 0,
+    });
+  };
+
+  it("lists the common ratios as exact sizes, with the documented example among them", () => {
+    // https://developers.cloudflare.com/ai/models/bytedance/seedream-5-pro/
+    const model = getMediaModel(id);
+    expect(model?.kind).toBe("image");
+    expect(model?.sizes).toContain("1536x864");
+    expect(model?.sizes).toHaveLength(8);
+    expect(model?.input).toMatchObject({
+      maxReferences: 0,
+      referenceField: null,
+    });
+    for (const size of model?.sizes ?? []) {
+      const [width = 0, height = 0] = size.split("x").map(Number);
+      expect(width % 16).toBe(0);
+      expect(height % 16).toBe(0);
+      expect(Math.max(width, height)).toBeLessThanOrEqual(
+        model?.input.maxDimension ?? 0,
+      );
+      expect(sized(size).width).toBe(width);
+    }
+  });
+
+  it("refuses a size it does not list, a long prompt and any reference", () => {
+    expect(() => sized("1000x1000")).toThrow("accepts only these sizes");
+    expect(() => sized("1536x864", "x".repeat(2049))).toThrow(
+      "its limit is 2048",
+    );
+    expect(() =>
+      validateMediaGenerationSettings({
+        model: id,
+        prompt: "x",
+        width: 1536,
+        height: 864,
+        references: [{ computerId: "pictures", path: "/a.png" }],
+      }),
+    ).toThrow("accepts at most 0 reference images");
+  });
+
+  it("sends only the documented fields", () => {
+    expect(gatewayInput(sized("1536x864"))).toEqual({
+      prompt: "a mushroom knight",
+      size: "1536x864",
+      watermark: false,
+    });
+  });
+
+  it("bills the published $0.045 per image, whatever the size", () => {
+    expect(mediaUnits(sized("1536x864"))).toEqual({ unit: "image", units: 1 });
+    for (const size of getMediaModel(id)?.sizes ?? [])
+      expect(estimateGatewayMilliunits(sized(size), [])).toBe(4_500);
+  });
+
+  it("reads its list of result URLs through the gateway route", async () => {
+    const run = vi.fn(() =>
+      Promise.resolve({
+        state: "Completed",
+        result: { images: ["https://results.example/image.jpeg"] },
+      }),
+    );
+    const fetchResult = vi.fn<typeof fetch>(() =>
+      Promise.resolve(new Response(png)),
+    );
+    await expect(
+      generate(
+        { run },
+        sized("1536x864"),
+        [],
+        undefined,
+        undefined,
+        fetchResult,
+      ),
+    ).resolves.toMatchObject({ format: "png" });
+    expect(fetchResult).toHaveBeenCalledWith(
+      "https://results.example/image.jpeg",
+      expect.anything(),
+    );
+    expect(run).toHaveBeenCalledWith(
+      id,
+      { prompt: "a mushroom knight", size: "1536x864", watermark: false },
+      undefined,
+    );
+  });
+});
+
 describe("Seedance 2.5", () => {
   const id = "bytedance/seedance-2.5";
   const clip = (

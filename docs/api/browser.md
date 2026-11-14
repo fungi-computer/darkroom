@@ -62,6 +62,7 @@ const mediaFailureSchema: ZodObject<{
   }>;
   code: ZodEnum<{
      CAPABILITY_DENIED: "CAPABILITY_DENIED";
+     DAILY_LIMIT_REACHED: "DAILY_LIMIT_REACHED";
      INSUFFICIENT_CREDIT: "INSUFFICIENT_CREDIT";
      HOST_FAILURE: "HOST_FAILURE";
      INVALID_ARGUMENT: "INVALID_ARGUMENT";
@@ -101,6 +102,7 @@ function readMediaFailure(
     | "destination-write";
   code:
     | "CAPABILITY_DENIED"
+    | "DAILY_LIMIT_REACHED"
     | "INSUFFICIENT_CREDIT"
     | "HOST_FAILURE"
     | "INVALID_ARGUMENT"
@@ -127,8 +129,8 @@ Read and decode one Media host failure at the browser HTTP boundary.
 \| `"generation-authorization"` \| `"settings"` \| `"estimate"` \| `"billing"`
 \| `"operation"` \| `"normalization"` \| `"artifact"` \|
 `"destination-authorization"` \| `"destination-write"`; `code`: \|
-`"CAPABILITY_DENIED"` \| `"INSUFFICIENT_CREDIT"` \| `"HOST_FAILURE"` \|
-`"INVALID_ARGUMENT"` \| `"MEDIA_PROVIDER_FAILURE"` \|
+`"CAPABILITY_DENIED"` \| `"DAILY_LIMIT_REACHED"` \| `"INSUFFICIENT_CREDIT"` \|
+`"HOST_FAILURE"` \| `"INVALID_ARGUMENT"` \| `"MEDIA_PROVIDER_FAILURE"` \|
 `"MEDIA_PROVIDER_FAILURE_UNCHARGED"` \| `"SAFETY_FILTER_REFUSED"`; `retryable`:
 `boolean`; `provider?`: `MediaProviderDiagnostic`; \} \| `null`\>
 

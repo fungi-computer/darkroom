@@ -5,7 +5,7 @@ import type {
   MediaOperationRequest,
 } from "./media-operation-owner.js";
 import type { MediaUnits } from "./gateway-models.js";
-import type { MediaReferenceBytes } from "./index.js";
+import type { MediaCatalogue, MediaReferenceBytes } from "./index.js";
 
 /**
  * The host's billing owner for Media. Every call is keyed by the durable
@@ -83,6 +83,8 @@ export type MediaExecution = Readonly<{
   requestId: string;
   /** Captured generation and fixed destination. */
   request: MediaOperationRequest;
+  /** The active provider's model list; omitted means the Fungi gateway's. */
+  catalogue?: MediaCatalogue | undefined;
   /** The billing owner, or `unmetered` when the host pays its own provider. */
   metering: MediaMetering | "unmetered";
   /** Optional cancellation signal. */

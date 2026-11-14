@@ -1,5 +1,29 @@
 # @fungi.computer/darkroom
 
+## 0.7.0
+
+### Minor Changes
+
+- Changes since 0.6.0:
+
+  - fix(oyster): satisfy anti-slop in the Oyster price proof
+  - fix(hub): fill the agents instructionsUrl in the quote test host; regenerate
+    API docs
+  - feat(media): price one exact generation through the host
+  - fix(darkroom): document the daily meter and regenerate API docs
+  - fix(darkroom): keep the gateway video schema; regenerate API docs
+  - fix(oyster): explain Cloudflare Images error 9432 and minify the standalone
+    Worker
+  - feat(prints): add Seedream 5 Pro as an image model
+  - feat(darkroom): let a host inject its provider's model catalogue
+  - fix(oyster): keep the media env type and check the daily meter object
+  - feat(oyster): daily media hard stop with a plain spending-limit message
+
+### Patch Changes
+
+- Updated dependencies
+  - @fungi.computer/agar@0.13.0
+
 ## 0.6.0
 
 ### Minor Changes

@@ -10,6 +10,74 @@
 
 ## Classes
 
+### DailyMediaMeter
+
+A UTC-day total of admitted media cost, kept in one Durable Object's SQLite.
+Every statement runs inside one synchronous transaction, so two concurrent
+admits near the limit are serialized by the object and cannot both pass. Holds
+are keyed by the durable operation id, so a retried admit never counts twice. A
+hold that is never settled stays counted until its day ends.
+
+#### Constructors
+
+##### Constructor
+
+```ts
+new DailyMediaMeter(storage, now?): DailyMediaMeter;
+```
+
+###### Parameters
+
+| Parameter | Type                                                | Default value |
+| --------- | --------------------------------------------------- | ------------- |
+| `storage` | [`DailyMediaMeterStorage`](#dailymediameterstorage) | `undefined`   |
+| `now`     | () => `number`                                      | `Date.now`    |
+
+###### Returns
+
+[`DailyMediaMeter`](#dailymediameter)
+
+#### Methods
+
+##### admit()
+
+```ts
+admit(input): boolean;
+```
+
+Hold `costMilliunits` for this operation unless the day's total would exceed the
+limit.
+
+###### Parameters
+
+| Parameter | Type                                                                                                  |
+| --------- | ----------------------------------------------------------------------------------------------------- |
+| `input`   | `Readonly`\<\{ `operationId`: `string`; `costMilliunits`: `number`; `limitMilliunits`: `number`; \}\> |
+
+###### Returns
+
+`boolean`
+
+##### settle()
+
+```ts
+settle(input): void;
+```
+
+Keep the hold when media was delivered; release it when nothing was.
+
+###### Parameters
+
+| Parameter | Type                                                                 |
+| --------- | -------------------------------------------------------------------- |
+| `input`   | `Readonly`\<\{ `operationId`: `string`; `delivered`: `boolean`; \}\> |
+
+###### Returns
+
+`void`
+
+---
+
 ### MediaExecutionError
 
 A bounded stage marker for failures that cross the Media HTTP boundary.
@@ -802,6 +870,39 @@ Release preparation or refused admission so the same request can retry.
 
 ## Type Aliases
 
+### DailyMediaMeterStorage
+
+```ts
+type DailyMediaMeterStorage = Readonly<{
+  sql: Readonly<{
+    exec: (
+      query,
+      ...bindings
+    ) => Readonly<{
+      toArray: () => readonly unknown[];
+    }>;
+  }>;
+  transactionSync: <T>(body) => T;
+}>;
+```
+
+The Durable Object storage slice the meter owns tables in.
+
+---
+
+### DailyMediaMeterPort
+
+```ts
+type DailyMediaMeterPort = Readonly<{
+  dailyAdmit: (input) => Promise<boolean> | boolean;
+  dailySettle: (input) => Promise<void> | void;
+}>;
+```
+
+RPC surface of the Durable Object that owns one Oyster's daily media total.
+
+---
+
 ### MediaFailureStage
 
 ```ts
@@ -835,7 +936,8 @@ Private cause plus an independently decoded, safe provider diagnostic.
 ### MediaBillingRefusalCode
 
 ```ts
-type MediaBillingRefusalCode = "insufficient_credits" | "denied";
+type MediaBillingRefusalCode =
+  "insufficient_credits" | "denied" | "daily_limit_reached";
 ```
 
 Why the host's billing owner refused to admit a new generation.
@@ -1086,6 +1188,7 @@ Retained output projection, or a terminal spent format refusal.
 ```ts
 type MediaOperationHooks = Readonly<{
   namespace?: () => string | null;
+  catalogue?: () => MediaCatalogue;
 }>;
 ```
 
@@ -1463,6 +1566,16 @@ Delete the owner-selected object key.
 
 ---
 
+### MediaQuote
+
+```ts
+type MediaQuote = Readonly<MediaUnits & object>;
+```
+
+The provider cost of one exact generation request, before any billing policy.
+
+---
+
 ### MediaScope
 
 ```ts
@@ -1505,6 +1618,14 @@ type MediaServiceHost = Readonly<{
      readReference?: (reference, model) => Promise<MediaReferenceBytes>;
   }>;
   onFailure?: (error) => Response | undefined;
+}> &
+  | Readonly<{
+  catalogue?: undefined;
+  estimate?: undefined;
+}>
+  | Readonly<{
+  catalogue: MediaCatalogue;
+  estimate: (settings, references) => number;
 }> &
   | Readonly<{
   metering: "unmetered";
@@ -2021,19 +2142,41 @@ Quote the catalog defaults through the exact estimator used before dispatch.
 
 ---
 
+### createDailyMediaMetering()
+
+```ts
+function createDailyMediaMetering(meter, limitMilliunits): MediaMetering;
+```
+
+`MediaMetering` that enforces one exact daily limit through the owning object.
+
+#### Parameters
+
+| Parameter         | Type                                          |
+| ----------------- | --------------------------------------------- |
+| `meter`           | [`DailyMediaMeterPort`](#dailymediameterport) |
+| `limitMilliunits` | `number`                                      |
+
+#### Returns
+
+[`MediaMetering`](#mediametering)
+
+---
+
 ### mediaUnits()
 
 ```ts
-function mediaUnits(settings): MediaUnits;
+function mediaUnits(settings, catalogue?): MediaUnits;
 ```
 
 Billing units for validated settings; video bills its requested length.
 
 #### Parameters
 
-| Parameter  | Type                                                          |
-| ---------- | ------------------------------------------------------------- |
-| `settings` | [`MediaGenerationSettings`](index.md#mediagenerationsettings) |
+| Parameter   | Type                                                          | Default value |
+| ----------- | ------------------------------------------------------------- | ------------- |
+| `settings`  | [`MediaGenerationSettings`](index.md#mediagenerationsettings) | `undefined`   |
+| `catalogue` | [`MediaCatalogue`](index.md#mediacatalogue)                   | `mediaModels` |
 
 #### Returns
 
@@ -2173,6 +2316,52 @@ Decode bounded service replies once for both MEDIA host bindings.
 #### Returns
 
 `Promise`\<`JSONType`\>
+
+---
+
+### quoteMediaGeneration()
+
+```ts
+function quoteMediaGeneration(
+  raw,
+  references,
+): Promise<
+  Readonly<
+    Readonly<{
+      unit: "image" | "video_second";
+      units: number;
+    }> &
+      object
+  >
+>;
+```
+
+Quote one exact request: the same settings validation, reference reads,
+estimator and billing units a generation uses at admission, run without
+dispatching anything. A host applies its billing policy to this per unit, the
+way its metering does, so the number matches the charge.
+
+#### Parameters
+
+| Parameter              | Type                                                                                                                                                                                                                                                                                                                                                                 | Description                                                                           |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `raw`                  | \{ `model`: `string`; `prompt`: `string`; `width`: `number`; `height`: `number`; `steps?`: `number`; `durationSeconds?`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; \} | -                                                                                     |
+| `raw.model`            | `string`                                                                                                                                                                                                                                                                                                                                                             | Provider catalog model identifier.                                                    |
+| `raw.prompt`           | `string`                                                                                                                                                                                                                                                                                                                                                             | Generation prompt; each model's `maxPromptLength` is enforced on top of this ceiling. |
+| `raw.width`            | `number`                                                                                                                                                                                                                                                                                                                                                             | Requested image width or nominal video selector, not decoded MP4 dimensions.          |
+| `raw.height`           | `number`                                                                                                                                                                                                                                                                                                                                                             | Requested image height or nominal video selector, not decoded MP4 dimensions.         |
+| `raw.steps?`           | `number`                                                                                                                                                                                                                                                                                                                                                             | Model-specific inference step count.                                                  |
+| `raw.durationSeconds?` | `number`                                                                                                                                                                                                                                                                                                                                                             | Requested video length in whole seconds.                                              |
+| `raw.resolution?`      | `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`                                                                                                                                                                                                                                                                                                              | Video resolution; must match the nominal width/height selector.                       |
+| `raw.aspectRatio?`     | `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`                                                                                                                                                                                                                                                                                        | Video aspect; must match the nominal width/height selector.                           |
+| `raw.generateAudio?`   | `boolean`                                                                                                                                                                                                                                                                                                                                                            | Video audio selection.                                                                |
+| `raw.references?`      | `object`[]                                                                                                                                                                                                                                                                                                                                                           | Host-authorized reference images.                                                     |
+| `references`           | [`MediaReferenceReader`](index.md#mediareferencereader)                                                                                                                                                                                                                                                                                                              | -                                                                                     |
+
+#### Returns
+
+`Promise`\<`Readonly`\<`Readonly`\<\{ `unit`: `"image"` \| `"video_second"`;
+`units`: `number`; \}\> & `object`\>\>
 
 ---
 

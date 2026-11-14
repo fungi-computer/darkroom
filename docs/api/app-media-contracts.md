@@ -449,6 +449,7 @@ Missing-library refusal decoded and returned by the App media broker.
 const appMediaBrokerFailureSchema: ZodObject<{
   error: ZodEnum<{
      CAPABILITY_DENIED: "CAPABILITY_DENIED";
+     DAILY_LIMIT_REACHED: "DAILY_LIMIT_REACHED";
      INSUFFICIENT_CREDIT: "INSUFFICIENT_CREDIT";
      HOST_FAILURE: "HOST_FAILURE";
      INVALID_ARGUMENT: "INVALID_ARGUMENT";
@@ -502,6 +503,7 @@ const appMediaRefusalSchema: ZodUnion<readonly [ZodObject<{
 }, $strict>>, ZodObject<{
   error: ZodEnum<{
      CAPABILITY_DENIED: "CAPABILITY_DENIED";
+     DAILY_LIMIT_REACHED: "DAILY_LIMIT_REACHED";
      INSUFFICIENT_CREDIT: "INSUFFICIENT_CREDIT";
      HOST_FAILURE: "HOST_FAILURE";
      INVALID_ARGUMENT: "INVALID_ARGUMENT";
@@ -597,6 +599,7 @@ const appMediaModelsOutcomeSchema: ZodUnion<readonly [ZodLazy<ZodArray<ZodReadon
 }, $strict>>, ZodObject<{
   error: ZodEnum<{
      CAPABILITY_DENIED: "CAPABILITY_DENIED";
+     DAILY_LIMIT_REACHED: "DAILY_LIMIT_REACHED";
      INSUFFICIENT_CREDIT: "INSUFFICIENT_CREDIT";
      HOST_FAILURE: "HOST_FAILURE";
      INVALID_ARGUMENT: "INVALID_ARGUMENT";
@@ -669,6 +672,7 @@ const appMediaGenerationOutcomeSchema: ZodUnion<readonly [ZodObject<{
 }, $strict>>, ZodObject<{
   error: ZodEnum<{
      CAPABILITY_DENIED: "CAPABILITY_DENIED";
+     DAILY_LIMIT_REACHED: "DAILY_LIMIT_REACHED";
      INSUFFICIENT_CREDIT: "INSUFFICIENT_CREDIT";
      HOST_FAILURE: "HOST_FAILURE";
      INVALID_ARGUMENT: "INVALID_ARGUMENT";

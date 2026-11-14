@@ -208,9 +208,9 @@ const generate = (service, requestId = "first-picture", input = body) =>
     body: JSON.stringify(input),
   });
 try {
-  assert.equal(listMediaModels().length, 14);
+  assert.equal(listMediaModels().length, 15);
   const service = createMediaService(host);
-  assert.equal((await (await service.request("/models")).json()).length, 14);
+  assert.equal((await (await service.request("/models")).json()).length, 15);
   assert.equal((await generate(service)).status, 503);
   assert.equal(saved.length, 0);
   const retry = await generate(service);
@@ -256,6 +256,7 @@ try {
       refusalMessages: {
         insufficient_credits: "Refill your studio balance.",
         denied: "Studio spending denied.",
+        daily_limit_reached: "Studio daily limit reached.",
       },
     });
     const response = await generate(metered, reason);
@@ -265,6 +266,7 @@ try {
       {
         insufficient_credits: "Refill your studio balance.",
         denied: "Studio spending denied.",
+        daily_limit_reached: "Studio daily limit reached.",
       }[reason],
     );
   }

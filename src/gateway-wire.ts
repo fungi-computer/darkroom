@@ -17,6 +17,8 @@ export const gatewayOutputSchema = z.lazy(() =>
     state: z.literal("Completed").optional(),
     result: z.looseObject({
       image: resultUrl.optional(),
+      /** Seedream answers with a list of result URLs. */
+      images: z.array(resultUrl).min(1).optional(),
       video: resultUrl.optional(),
     }),
   }),

@@ -3,11 +3,19 @@ import {
   createWorkersAiMediaProvider,
   type MediaAiPort,
 } from "./cloudflare/provider.js";
-import type { MediaProvider } from "./index.js";
+import {
+  mediaModels,
+  type MediaCatalogue,
+  type MediaProvider,
+} from "./index.js";
 import {
   MediaOperationOwner,
   type MediaOperationEnvironment,
 } from "./media-operation-owner.js";
+import {
+  DailyMediaMeter,
+  type DailyMediaMeterPort,
+} from "./daily-media-meter.js";
 export type {
   MediaOperationRequest,
   MediaOperationCoordinates,
@@ -24,13 +32,21 @@ export type MediaOperationCloudflareEnvironment = MediaOperationEnvironment &
   }>;
 
 /** Cloudflare lifecycle and RPC surface around the durable media owner. */
-export class MediaOperationDO extends DurableObject<MediaOperationCloudflareEnvironment> {
+export class MediaOperationDO
+  extends DurableObject<MediaOperationCloudflareEnvironment>
+  implements DailyMediaMeterPort
+{
   protected readonly owner: MediaOperationOwner;
+  private readonly dailyMeter: DailyMediaMeter;
   constructor(
     ctx: DurableObjectState,
     env: MediaOperationCloudflareEnvironment,
   ) {
     super(ctx, env);
+    this.dailyMeter = new DailyMediaMeter({
+      sql: ctx.storage.sql,
+      transactionSync: (body) => ctx.storage.transactionSync(body),
+    });
     this.owner = new MediaOperationOwner(
       {
         id: { name: ctx.id.name },
@@ -50,12 +66,22 @@ export class MediaOperationDO extends DurableObject<MediaOperationCloudflareEnvi
       },
       env,
       () => this.mediaProvider(),
-      { namespace: () => this.retainedNamespace() },
+      {
+        namespace: () => this.retainedNamespace(),
+        catalogue: () => this.mediaCatalogue(),
+      },
     );
   }
   /** A host may pin the namespace through its own local lifecycle facts. */
   protected retainedNamespace(): string | null {
     return null;
+  }
+  /**
+   * A host that overrides `mediaProvider` also overrides this with that
+   * provider's catalogue; the default is the Fungi gateway's.
+   */
+  protected mediaCatalogue(): MediaCatalogue {
+    return mediaModels;
   }
   /** Hosts may supply their own provider for background generation. */
   protected mediaProvider(): MediaProvider | undefined {
@@ -66,6 +92,14 @@ export class MediaOperationDO extends DurableObject<MediaOperationCloudflareEnvi
         ? undefined
         : { gateway: { id: this.env.AI_GATEWAY_ID } },
     );
+  }
+  /** Admit one generation against today's hard stop; false means the daily limit is reached. */
+  dailyAdmit(...input: Parameters<DailyMediaMeter["admit"]>): boolean {
+    return this.dailyMeter.admit(...input);
+  }
+  /** Settle an admitted generation once its outcome is known. */
+  dailySettle(...input: Parameters<DailyMediaMeter["settle"]>): void {
+    this.dailyMeter.settle(...input);
   }
   /** {@inheritDoc MediaOperationOwner.read} */
   read(

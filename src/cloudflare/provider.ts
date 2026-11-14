@@ -2,7 +2,7 @@ import { z } from "zod";
 import * as Redacted from "effect/Redacted";
 import {
   buildProviderInput,
-  getMediaModel,
+  getGatewayModel,
   estimateImageMilliunits,
   normalizeMediaProviderOutput,
   mediaProviderWireSchema,
@@ -228,7 +228,7 @@ async function generateThroughGateway(
   } catch (cause) {
     throw providerFailure(settings.model, cause);
   }
-  const model = getMediaModel(settings.model);
+  const model = getGatewayModel(settings.model);
   const video = model?.kind === "video";
   try {
     if (video) {
@@ -250,7 +250,7 @@ async function generateThroughGateway(
     const parsed = gatewayOutputSchema.parse(providerValue);
     return await normalizeMediaProviderOutput(
       mediaProviderWireSchema.parse({
-        images: [{ url: parsed.result.image }],
+        images: [{ url: parsed.result.image ?? parsed.result.images?.[0] }],
       }),
       { fetchUrl: (url) => fetchResult(url, { signal: signal ?? null }) },
     );

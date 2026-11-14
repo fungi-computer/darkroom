@@ -1,10 +1,15 @@
-import { getMediaModel, MediaSettingsError } from "./model-catalog.js";
+import {
+  getMediaModel,
+  mediaModels,
+  MediaSettingsError,
+  type MediaCatalogue,
+} from "./model-catalog.js";
 
 const MIN_VIDEO_REFERENCE_DIMENSION = 320;
 
 /** One owner for both native fitting and the resolved-reference boundary. */
-function sizing(modelId: string) {
-  const model = getMediaModel(modelId);
+function sizing(modelId: string, catalogue: MediaCatalogue) {
+  const model = getMediaModel(modelId, catalogue);
   if (model === undefined) throw new MediaSettingsError("unknown Media model");
   return model.video === null && model.input.referenceDimension !== null
     ? { edge: "long" as const, dimension: model.input.referenceDimension }
@@ -16,8 +21,9 @@ export function referenceImageTransform(
   modelId: string,
   width: number,
   height: number,
+  catalogue: MediaCatalogue = mediaModels,
 ) {
-  const rule = sizing(modelId);
+  const rule = sizing(modelId, catalogue);
   const edge =
     rule.edge === "short" ? Math.min(width, height) : Math.max(width, height);
   const ratio =
@@ -40,16 +46,20 @@ export function referenceImageSizeIsValid(
   modelId: string,
   width: number,
   height: number,
+  catalogue: MediaCatalogue = mediaModels,
 ): boolean {
-  const rule = sizing(modelId);
+  const rule = sizing(modelId, catalogue);
   return rule.edge === "short"
     ? Math.min(width, height) >= rule.dimension
     : Math.max(width, height) <= rule.dimension;
 }
 
 /** The encoding the selected model's fitted references are sent in. */
-export function referenceImageFormat(modelId: string) {
-  const model = getMediaModel(modelId);
+export function referenceImageFormat(
+  modelId: string,
+  catalogue: MediaCatalogue = mediaModels,
+) {
+  const model = getMediaModel(modelId, catalogue);
   if (model === undefined) throw new MediaSettingsError("unknown Media model");
   return model.input.referenceFormat === "webp"
     ? ("image/webp" as const)

@@ -69,6 +69,7 @@ export function meteredHost(base: MediaServiceHost, metering: MediaMetering) {
     refusalMessages: {
       insufficient_credits: "Refill your studio balance.",
       denied: "Studio spending denied.",
+      daily_limit_reached: "Studio daily limit reached.",
     },
   });
 }

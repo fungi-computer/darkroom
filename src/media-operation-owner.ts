@@ -1,4 +1,8 @@
-import { mediaRequestedImageFormatSchema } from "./model-catalog.js";
+import {
+  mediaModels,
+  mediaRequestedImageFormatSchema,
+  type MediaCatalogue,
+} from "./model-catalog.js";
 import { defineIdFamily } from "@fungi.computer/cairn/id";
 import {
   mediaGenerationSettingsSchema,
@@ -291,6 +295,12 @@ class MediaOperationError extends Error {
 export type MediaOperationHooks = Readonly<{
   /** Read the namespace already owned by host-local facts, or null when unbound. */
   namespace?: () => string | null;
+  /**
+   * The model list of the provider this owner dispatches to. Omitted means the
+   * Fungi gateway's; a host that injects its own provider supplies that
+   * provider's catalogue so stored requests and alarms validate against it.
+   */
+  catalogue?: () => MediaCatalogue;
 }>;
 
 /** Retained-output storage supplied by the host. */
@@ -360,7 +370,10 @@ function fingerprint(input: MediaOperationRequest): string {
 
 const objectSchema = z.lazy(() => z.record(z.string(), z.unknown()));
 
-function decodeStoredRequest(serialized: string): MediaOperationRequest {
+function decodeStoredRequest(
+  serialized: string,
+  catalogue: MediaCatalogue,
+): MediaOperationRequest {
   let raw: unknown;
   try {
     raw = JSON.parse(serialized);
@@ -383,7 +396,10 @@ function decodeStoredRequest(serialized: string): MediaOperationRequest {
   if (!parsedGeneration.success) throw new MediaOperationError("partial_init");
   let settings: MediaGenerationSettings;
   try {
-    settings = validateMediaGenerationSettings(parsedGeneration.data);
+    settings = validateMediaGenerationSettings(
+      parsedGeneration.data,
+      catalogue,
+    );
   } catch (cause) {
     throw new MediaOperationError("partial_init", { cause });
   }
@@ -411,6 +427,10 @@ export class MediaOperationOwner {
    */
   protected mediaProvider(): MediaProvider | undefined {
     return this.provider?.();
+  }
+
+  private catalogue(): MediaCatalogue {
+    return this.hooks.catalogue?.() ?? mediaModels;
   }
 
   constructor(
@@ -483,7 +503,7 @@ export class MediaOperationOwner {
       namespace: coordinates.data.namespace,
       owner: coordinates.data.owner,
       fingerprint: row.fingerprint,
-      input: decodeStoredRequest(row.input),
+      input: decodeStoredRequest(row.input, this.catalogue()),
       state: row.state,
       leaseId: row.lease_id,
       leaseExpiresAt: row.lease_expires_at,
@@ -1059,6 +1079,7 @@ export class MediaOperationOwner {
       // The captured request includes destination authority; providers receive settings only.
       const settings = validateMediaGenerationSettings(
         mediaGenerationSettingsSchema.strip().parse(record.input),
+        this.catalogue(),
       );
       output = await provider(
         settings,

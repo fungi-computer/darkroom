@@ -19,12 +19,14 @@ import { AppError, describeAppError } from "@fungi.computer/agar/errors";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
 import { runMediaGeneration } from "./media-generation.js";
+import { quoteMediaGeneration } from "./media-quote.js";
 import {
   validateMediaGenerationSettings,
-  listMediaModels,
+  mediaModels,
   mediaGenerationSettingsSchema,
   mediaRequestedImageFormatSchema,
   MediaSettingsError,
+  type MediaCatalogue,
   type MediaProvider,
   type MediaReference,
   type MediaReferenceBytes,
@@ -43,6 +45,12 @@ import {
 } from "./execution-error.js";
 
 export {
+  createDailyMediaMetering,
+  DailyMediaMeter,
+  type DailyMediaMeterPort,
+  type DailyMediaMeterStorage,
+} from "./daily-media-meter.js";
+export {
   MediaBillingRefusal,
   MediaExecutionError,
   type MediaBillingRefusalCode,
@@ -50,6 +58,7 @@ export {
   type MediaExecutionErrorOptions,
 } from "./execution-error.js";
 export { mediaUnits, type MediaUnits } from "./gateway-models.js";
+export { quoteMediaGeneration, type MediaQuote } from "./media-quote.js";
 export type {
   MediaMetering,
   MediaOperation,
@@ -96,6 +105,10 @@ export const mediaRequestSchema = z.strictObject({
   settings: mediaGenerationSettingsSchema,
   /** Optional verified image encoding pin. */
   outputFormat: mediaRequestedImageFormatSchema.optional(),
+});
+/** A price request: the exact settings, no destination or request id. */
+const mediaQuoteRequestSchema = z.strictObject({
+  settings: mediaGenerationSettingsSchema,
 });
 export { mediaResultSchema } from "./media-operation-contract.js";
 
@@ -175,6 +188,27 @@ export type MediaServiceHost = Readonly<{
 }> &
   (
     | Readonly<{
+        /** Omitted: the Fungi gateway provider's own catalogue and quote. */
+        catalogue?: undefined;
+        /** Omitted with the catalogue: the gateway's own quote. */
+        estimate?: undefined;
+      }>
+    | Readonly<{
+        /**
+         * The injected `provider`'s own model list, decoded with
+         * `parseMediaCatalogue`. Requests are validated against it, never
+         * against the Fungi gateway's.
+         */
+        catalogue: MediaCatalogue;
+        /** Provider cost of validated settings in milliunits; owned by the custom provider. */
+        estimate: (
+          settings: Parameters<MediaProvider>[0],
+          references: readonly MediaReferenceBytes[],
+        ) => number;
+      }>
+  ) &
+  (
+    | Readonly<{
         /** The host pays its own provider directly. */
         metering: "unmetered";
         /** Unmetered hosts do not have billing refusal policy. */
@@ -192,6 +226,15 @@ const headers = {
   "Cache-Control": "private, no-store",
   "X-Content-Type-Options": "nosniff",
 };
+
+const billingRefusalWire = {
+  insufficient_credits: { code: "INSUFFICIENT_CREDIT", status: 402 },
+  denied: { code: "CAPABILITY_DENIED", status: 403 },
+  daily_limit_reached: { code: "DAILY_LIMIT_REACHED", status: 429 },
+} as const satisfies Record<
+  MediaBillingRefusalCode,
+  { code: string; status: number }
+>;
 
 function failure(
   error: MediaExecutionError | MediaSettingsError,
@@ -241,14 +284,11 @@ function failure(
           refusalMessages?.[error.cause.code] ??
           "Media generation was refused by the host.",
         stage: "billing",
-        code:
-          error.cause.code === "insufficient_credits"
-            ? "INSUFFICIENT_CREDIT"
-            : "CAPABILITY_DENIED",
+        code: billingRefusalWire[error.cause.code].code,
         retryable: false,
       },
       {
-        status: error.cause.code === "denied" ? 403 : 402,
+        status: billingRefusalWire[error.cause.code].status,
         headers,
       },
     );
@@ -463,7 +503,7 @@ export function createMediaService(host: MediaServiceHost) {
   const app = new Hono();
   app.get("/models", () =>
     Response.json(
-      listMediaModels().map((model) =>
+      (host.catalogue ?? mediaModels).map((model) =>
         host.destination.readReference !== undefined ||
         model.input.maxReferences === 0
           ? model
@@ -509,6 +549,34 @@ export function createMediaService(host: MediaServiceHost) {
         }),
       ),
     );
+  });
+  // The provider cost of one exact request, priced by the same estimator and
+  // reference reads as /generate; the host applies any billing policy.
+  app.post("/quote", async (context) => {
+    const body = await readJsonBody(context.req.raw);
+    const input =
+      body.kind === "parsed"
+        ? mediaQuoteRequestSchema.safeParse(body.value)
+        : undefined;
+    if (input?.success !== true)
+      return failure(new MediaSettingsError("invalid request"));
+    try {
+      const quote = await quoteMediaGeneration(input.data.settings, {
+        read: (reference, model) => {
+          if (host.destination.readReference === undefined)
+            throw new MediaSettingsError("reference images are unavailable");
+          return host.destination.readReference(reference, model);
+        },
+      });
+      return Response.json(quote, { headers });
+    } catch (cause) {
+      if (cause instanceof MediaSettingsError) return failure(cause);
+      const error =
+        cause instanceof MediaExecutionError
+          ? cause
+          : new MediaExecutionError("estimate", { cause });
+      return host.onFailure?.(error) ?? failure(error, host.refusalMessages);
+    }
   });
   return app;
 }

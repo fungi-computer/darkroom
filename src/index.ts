@@ -2,16 +2,18 @@ import * as z from "zod";
 import { reportCatchFailure } from "./failure.js";
 import { referenceImageSizeIsValid } from "./reference-image-size.js";
 import {
+  getGatewayModel,
   getMediaModel,
   MAX_REFERENCE_COUNT,
   MediaSettingsError,
+  mediaModels,
   mediaVideoModelIdSchema,
   mediaVideoResolutionSchema,
   mediaVideoAspectRatioSchema,
   mediaVideoReferenceRoleSchema,
   MAX_MEDIA_PROMPT_LENGTH,
   type MediaVideoReferenceRole,
-  type MediaVideoModelId,
+  type MediaCatalogue,
   type MediaVideoResolution,
   type MediaVideoAspectRatio,
 } from "./model-catalog.js";
@@ -21,8 +23,12 @@ export { mediaFailureStageSchema } from "./execution-error.js";
 export {
   MAX_MEDIA_PROMPT_LENGTH,
   getMediaModel,
+  getGatewayModel,
   MAX_REFERENCE_COUNT,
   listMediaModels,
+  mediaCatalogueSchema,
+  mediaCatalogueModelSchema,
+  parseMediaCatalogue,
   mediaModelInputSchema,
   mediaModelSchema,
   mediaRequestedImageFormatSchema,
@@ -37,6 +43,8 @@ export {
   mediaVideoSchema,
 } from "./model-catalog.js";
 export type {
+  MediaCatalogue,
+  MediaCatalogueModel,
   MediaModel,
   MediaModelInput,
   MediaModelTier,
@@ -272,19 +280,28 @@ type MutableMediaGenerationSettings<Reference> = {
   references?: readonly Reference[];
 };
 
-/** Validate caller settings and apply retained model defaults. */
+/**
+ * Validate caller settings against `catalogue`, the active provider's model
+ * list (the Fungi gateway's by default), and apply that model's defaults.
+ */
 export const validateMediaGenerationSettings = (
   raw: MediaGenerationSettingsInput,
+  catalogue: MediaCatalogue = mediaModels,
 ): MediaGenerationSettings => {
   const parsed = mediaGenerationSettingsSchema.safeParse(raw);
   if (!parsed.success)
     throw new MediaSettingsError("generation settings are invalid");
-  return normalizeGenerationSettings(parsed.data, normalizeReference);
+  return normalizeGenerationSettings(
+    parsed.data,
+    normalizeReference,
+    catalogue,
+  );
 };
 
 /** Validate selections without granting Computer authority. */
 export const validateMediaGenerationSelection = (
   raw: z.input<typeof mediaGenerationSelectionSchema>,
+  catalogue: MediaCatalogue = mediaModels,
 ): Readonly<
   Omit<MediaGenerationSettings, "references"> & {
     /** Host-authorized reference images. */
@@ -301,15 +318,19 @@ export const validateMediaGenerationSelection = (
   const parsed = mediaGenerationSelectionSchema.safeParse(raw);
   if (!parsed.success)
     throw new MediaSettingsError("generation settings are invalid");
-  return normalizeGenerationSettings(parsed.data, (reference) => {
-    const path = requiredString(reference.path, "reference path");
-    const selection =
-      reference.computerId === undefined
-        ? { path }
-        : { path, computerId: reference.computerId };
-    if (reference.role === undefined) return selection;
-    return { ...selection, role: reference.role };
-  });
+  return normalizeGenerationSettings(
+    parsed.data,
+    (reference) => {
+      const path = requiredString(reference.path, "reference path");
+      const selection =
+        reference.computerId === undefined
+          ? { path }
+          : { path, computerId: reference.computerId };
+      if (reference.role === undefined) return selection;
+      return { ...selection, role: reference.role };
+    },
+    catalogue,
+  );
 };
 
 function normalizeGenerationSettings<
@@ -324,9 +345,10 @@ function normalizeGenerationSettings<
     references?: readonly InputReference[] | undefined;
   },
   normalize: (reference: InputReference) => Reference,
+  catalogue: MediaCatalogue,
 ): Readonly<MutableMediaGenerationSettings<Reference>> {
   const modelId = requiredString(input.model, "model");
-  const model = getMediaModel(modelId);
+  const model = getMediaModel(modelId, catalogue);
   if (model === undefined)
     throw new MediaSettingsError(`unknown Media model "${modelId}"`);
   const prompt = requiredString(input.prompt, "prompt");
@@ -522,14 +544,21 @@ export const mediaVideoSelectionSchema = z.lazy(() =>
       .optional(),
   }),
 );
+/**
+ * The same selection for a host's own catalogue: the model is any id that
+ * catalogue lists, checked by `validateMediaVideoSelection`.
+ */
+const catalogueVideoSelectionSchema = mediaVideoSelectionSchema
+  .unwrap()
+  .extend({ model: z.string().min(1).max(256) });
 /** Caller video selection before defaults and model-specific refinements. */
 export type MediaVideoSelectionInput = z.input<
   typeof mediaVideoSelectionSchema
 >;
 /** Normalized path-only video settings, ready for host-authorized reference hydration. */
 export type MediaVideoSelection = Readonly<{
-  /** Verified catalog video identifier. */
-  model: MediaVideoModelId;
+  /** Catalogue video identifier. */
+  model: string;
   /** Trimmed, bounded prompt. */
   prompt: string;
   /** Nominal width selecting resolution/aspect, not decoded MP4 dimensions. */
@@ -553,13 +582,14 @@ type MutableMediaVideoSelection = {
 
 /** Validate supported model/size/duration/reference combinations before authority or billing admission. */
 export function validateMediaVideoSelection(
-  raw: MediaVideoSelectionInput,
+  raw: z.input<typeof catalogueVideoSelectionSchema>,
+  catalogue: MediaCatalogue = mediaModels,
 ): MediaVideoSelection {
-  const parsed = mediaVideoSelectionSchema.safeParse(raw);
+  const parsed = catalogueVideoSelectionSchema.safeParse(raw);
   if (!parsed.success)
     throw new MediaSettingsError("video selection is invalid");
   const input = parsed.data;
-  const model = getMediaModel(input.model);
+  const model = getMediaModel(input.model, catalogue);
   if (model?.video == null) throw new MediaSettingsError("unknown video model");
   const resolution = input.resolution ?? model.video.defaultResolution;
   const aspectRatio = input.aspectRatio ?? model.video.defaultAspectRatio;
@@ -572,11 +602,14 @@ export function validateMediaVideoSelection(
     throw new MediaSettingsError(
       `${model.id} does not accept this resolution/aspect`,
     );
-  const normalized = validateMediaGenerationSelection({
-    ...input,
-    width: format.width,
-    height: format.height,
-  });
+  const normalized = validateMediaGenerationSelection(
+    {
+      ...input,
+      width: format.width,
+      height: format.height,
+    },
+    catalogue,
+  );
   const selection: MutableMediaVideoSelection = {
     ...format,
     model: input.model,
@@ -608,8 +641,9 @@ const imageFormats = new Set<ImageFormat>(["png", "jpeg", "gif", "webp"]);
 export const resolveMediaReferences = async (
   settings: MediaGenerationSettings,
   reader: MediaReferenceReader,
+  catalogue: MediaCatalogue = mediaModels,
 ): Promise<readonly MediaReferenceBytes[]> => {
-  const model = getMediaModel(settings.model);
+  const model = getMediaModel(settings.model, catalogue);
   if (model === undefined) throw new MediaSettingsError("unknown Media model");
   const references = settings.references ?? [];
   if (references.length > model.input.maxReferences)
@@ -626,7 +660,12 @@ export const resolveMediaReferences = async (
       !Number.isSafeInteger(image.height) ||
       image.width < 1 ||
       image.height < 1 ||
-      !referenceImageSizeIsValid(settings.model, image.width, image.height) ||
+      !referenceImageSizeIsValid(
+        settings.model,
+        image.width,
+        image.height,
+        catalogue,
+      ) ||
       !(image.bytes instanceof Uint8Array) ||
       image.bytes.byteLength === 0 ||
       image.bytes.byteLength > MAX_REFERENCE_BYTES
@@ -685,7 +724,7 @@ export const buildProviderInput = (
   settings: MediaGenerationSettings,
   references: readonly MediaReferenceBytes[] = [],
 ): MediaProviderPayload => {
-  const model = getMediaModel(settings.model);
+  const model = getGatewayModel(settings.model);
   if (model === undefined) throw new MediaSettingsError("unknown Media model");
   if (model.sizes !== null)
     throw new MediaSettingsError(`${model.id} runs through the AI Gateway`);
@@ -1077,18 +1116,22 @@ export type MediaVideoQuoteSettings = ReturnType<
   typeof validateMediaGenerationSelection
 >;
 
-/** Provider video cost from the sole catalog, in milliunits (1 cent = 1,000). Video-input references are unsupported. */
+/** Provider video cost from `catalogue`, in milliunits (1 cent = 1,000). Video-input references are unsupported. */
 export function estimateVideoMilliunits(
   settings: MediaVideoQuoteSettings,
+  catalogue: MediaCatalogue = mediaModels,
 ): number {
-  const checked = validateMediaGenerationSelection({
-    ...settings,
-    references: settings.references?.map((reference) => ({
-      path: reference.path,
-      role: reference.role,
-    })),
-  });
-  const model = getMediaModel(checked.model);
+  const checked = validateMediaGenerationSelection(
+    {
+      ...settings,
+      references: settings.references?.map((reference) => ({
+        path: reference.path,
+        role: reference.role,
+      })),
+    },
+    catalogue,
+  );
+  const model = getMediaModel(checked.model, catalogue);
   if (model?.video == null || checked.durationSeconds === undefined)
     throw new MediaSettingsError("video cost requires a verified video model");
   const price = model.video.prices.find(

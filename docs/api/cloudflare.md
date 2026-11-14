@@ -18,6 +18,10 @@ Cloudflare lifecycle and RPC surface around the durable media owner.
 
 - `DurableObject`\<[`MediaOperationCloudflareEnvironment`](#mediaoperationcloudflareenvironment)\>
 
+#### Implements
+
+- [`DailyMediaMeterPort`](server.md#dailymediameterport)
+
 #### Constructors
 
 ##### Constructor
@@ -44,6 +48,55 @@ DurableObject<MediaOperationCloudflareEnvironment>.constructor
 ```
 
 #### Methods
+
+##### dailyAdmit()
+
+```ts
+dailyAdmit(...input): boolean;
+```
+
+Admit one generation against today's hard stop; false means the daily limit is
+reached.
+
+###### Parameters
+
+| Parameter  | Type                                                                                                      |
+| ---------- | --------------------------------------------------------------------------------------------------------- |
+| ...`input` | \[`Readonly`\<\{ `operationId`: `string`; `costMilliunits`: `number`; `limitMilliunits`: `number`; \}\>\] |
+
+###### Returns
+
+`boolean`
+
+###### Implementation of
+
+```ts
+DailyMediaMeterPort.dailyAdmit;
+```
+
+##### dailySettle()
+
+```ts
+dailySettle(...input): void;
+```
+
+Settle an admitted generation once its outcome is known.
+
+###### Parameters
+
+| Parameter  | Type                                                                     |
+| ---------- | ------------------------------------------------------------------------ |
+| ...`input` | \[`Readonly`\<\{ `operationId`: `string`; `delivered`: `boolean`; \}\>\] |
+
+###### Returns
+
+`void`
+
+###### Implementation of
+
+```ts
+DailyMediaMeterPort.dailySettle;
+```
 
 ##### read()
 

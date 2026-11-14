@@ -31,6 +31,23 @@ const formats = {
   "image/webp": "webp",
 } as const;
 
+/**
+ * Cloudflare answers the Images binding with error 9432 ("not available using
+ * legacy billing") when the account has not moved to the current billing
+ * model. Say what to do, not the raw binding failure.
+ */
+export const imagesLegacyBillingMessage =
+  "Cloudflare Images is not available on this Cloudflare account because it is on legacy billing (Cloudflare error 9432). Reference images need the Images binding. Update the account's billing in the Cloudflare dashboard, or generate without reference images.";
+
+/** The Images binding's `ImagesError` carries Cloudflare's numeric error code. */
+const legacyBillingFailure = z.object({ code: z.literal(9432) });
+
+function legacyBillingRefusal(cause: unknown): MediaSettingsError | undefined {
+  return legacyBillingFailure.safeParse(cause).success
+    ? new MediaSettingsError(imagesLegacyBillingMessage)
+    : undefined;
+}
+
 const stream = (bytes: Uint8Array) =>
   new ReadableStream<Uint8Array>({
     start(controller) {
@@ -91,9 +108,12 @@ export function createImagesReferenceFitter(
     let info: z.output<typeof metadata>;
     try {
       info = metadata.parse(await images.info(stream(bytes)));
-    } catch {
-      // The Images failure detail is never surfaced; the caller's bytes are.
-      throw new MediaSettingsError("reference image is not a supported image");
+    } catch (cause) {
+      // Other Images failure detail is never surfaced; the caller's bytes are.
+      throw (
+        legacyBillingRefusal(cause) ??
+        new MediaSettingsError("reference image is not a supported image")
+      );
     }
     const transform = referenceImageTransform(model, info.width, info.height);
     const target = referenceImageFormat(model);
@@ -109,7 +129,10 @@ export function createImagesReferenceFitter(
           target === "image/webp"
             ? { format: target, quality: REFERENCE_WEBP_QUALITY }
             : { format: target },
-        );
+        )
+        .catch((cause: unknown) => {
+          throw legacyBillingRefusal(cause) ?? cause;
+        });
       bytes = new Uint8Array(await output.response().arrayBuffer());
       if (bytes.byteLength === 0 || bytes.byteLength > MAX_REFERENCE_BYTES)
         throw new MediaSettingsError("reference image exceeds the byte limit");
@@ -138,9 +161,12 @@ export function createImagesViewFitter(
       throw new MediaSettingsError("view dimension is out of bounds");
     try {
       metadata.parse(await images.info(stream(input)));
-    } catch {
-      // The Images failure detail is never surfaced.
-      throw new MediaSettingsError("image is not a supported image");
+    } catch (cause) {
+      // Other Images failure detail is never surfaced.
+      throw (
+        legacyBillingRefusal(cause) ??
+        new MediaSettingsError("image is not a supported image")
+      );
     }
     const output = await images
       .input(stream(input))

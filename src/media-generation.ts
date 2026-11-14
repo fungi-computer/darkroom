@@ -6,6 +6,7 @@ import {
   MediaSettingsError,
 } from "./index.js";
 import { estimate } from "./cloudflare/provider.js";
+import { mediaModels } from "./model-catalog.js";
 import { executeMediaOperation } from "./media-operation.js";
 import type { MediaExecution } from "./media-operation-contract.js";
 import { MediaExecutionError } from "./execution-error.js";
@@ -29,14 +30,16 @@ export function runMediaGeneration(
   MediaGenerationOutcome,
   MediaExecutionError | MediaSettingsError
 > {
+  const catalogue = host.catalogue ?? mediaModels;
+  const estimator = host.estimate ?? estimate;
   return Effect.gen(function* () {
     const settings = yield* Effect.try({
-      try: () => validateMediaGenerationSettings(request.settings),
+      try: () => validateMediaGenerationSettings(request.settings, catalogue),
       catch: () => new MediaSettingsError("invalid generation settings"),
     });
     if (
       request.outputFormat !== undefined &&
-      !getMediaModel(settings.model)?.outputFormats.includes(
+      !getMediaModel(settings.model, catalogue)?.outputFormats.includes(
         request.outputFormat,
       )
     )
@@ -63,6 +66,7 @@ export function runMediaGeneration(
         owner: host.scope.owner,
       },
       requestId: request.requestId,
+      catalogue,
       request: {
         ...settings,
         computerId: host.scope.destinationId,
@@ -76,16 +80,20 @@ export function runMediaGeneration(
       },
       generation: {
         prepare: async () => {
-          const references = await resolveMediaReferences(settings, {
-            read: (reference, model) => {
-              if (host.destination.readReference === undefined)
-                throw new MediaSettingsError(
-                  "reference images are unavailable",
-                );
-              return host.destination.readReference(reference, model);
+          const references = await resolveMediaReferences(
+            settings,
+            {
+              read: (reference, model) => {
+                if (host.destination.readReference === undefined)
+                  throw new MediaSettingsError(
+                    "reference images are unavailable",
+                  );
+                return host.destination.readReference(reference, model);
+              },
             },
-          });
-          const costMilliunits = estimate(settings, references);
+            catalogue,
+          );
+          const costMilliunits = estimator(settings, references);
           // Reference preparation may suspend. This final authority check is
           // the new-generation admission cutoff, before durable dispatch.
           try {
@@ -115,7 +123,7 @@ export function runMediaGeneration(
     if (
       outcome.kind === "accepted" ||
       (outcome.kind === "pending" &&
-        getMediaModel(settings.model)?.kind === "video")
+        getMediaModel(settings.model, catalogue)?.kind === "video")
     )
       // A video generation runs in the background; retry this request id.
       return {

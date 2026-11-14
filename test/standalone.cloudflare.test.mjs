@@ -51,7 +51,7 @@ it("retains native output across DO eviction and retries without another provide
   ).toBe(401);
   const catalog = await request("/models");
   expect(catalog.status).toBe(200);
-  expect(await catalog.json()).toHaveLength(14);
+  expect(await catalog.json()).toHaveLength(15);
   expect(
     (await request("/generate", { method: "POST", body: "{" })).status,
   ).toBe(400);

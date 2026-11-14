@@ -1,4 +1,10 @@
-import { getMediaModel, MediaSettingsError } from "./model-catalog.js";
+import {
+  getGatewayModel,
+  getMediaModel,
+  mediaModels,
+  MediaSettingsError,
+  type MediaCatalogue,
+} from "./model-catalog.js";
 import {
   validateMediaGenerationSettings,
   estimateVideoMilliunits,
@@ -13,9 +19,12 @@ import {
 } from "./video-providers/index.js";
 
 /** Gateway images and the verified catalog's video families share Unified billing. */
-export type GatewayModelId = "openai/gpt-image-2" | MediaVideoModelId;
+export type GatewayModelId =
+  "openai/gpt-image-2" | "bytedance/seedream-5-pro" | MediaVideoModelId;
 export const isGatewayModel = (id: string): id is GatewayModelId =>
-  id === "openai/gpt-image-2" || getMediaModel(id)?.kind === "video";
+  id === "openai/gpt-image-2" ||
+  id === "bytedance/seedream-5-pro" ||
+  getGatewayModel(id)?.kind === "video";
 
 /** What one generation bills: whole images, or seconds of video. */
 export type MediaUnits = Readonly<{
@@ -26,15 +35,21 @@ export type MediaUnits = Readonly<{
 }>;
 
 /** Billing units for validated settings; video bills its requested length. */
-export function mediaUnits(settings: MediaGenerationSettings): MediaUnits {
-  const model = getMediaModel(settings.model);
+export function mediaUnits(
+  settings: MediaGenerationSettings,
+  catalogue: MediaCatalogue = mediaModels,
+): MediaUnits {
+  const model = getMediaModel(settings.model, catalogue);
   if (model === undefined)
     throw new MediaSettingsError("billing units require a known Media model");
   if (model.kind === "video") {
-    const checked = validateMediaGenerationSettings({
-      ...settings,
-      references: settings.references?.map((reference) => ({ ...reference })),
-    });
+    const checked = validateMediaGenerationSettings(
+      {
+        ...settings,
+        references: settings.references?.map((reference) => ({ ...reference })),
+      },
+      catalogue,
+    );
     if (checked.durationSeconds === undefined)
       throw new MediaSettingsError("video settings need a duration");
     return { unit: "video_second", units: checked.durationSeconds };
@@ -125,7 +140,11 @@ export function estimateGatewayMilliunits(
         10,
     );
   }
-  if (getMediaModel(settings.model)?.kind === "video")
+  // Cloudflare prices Seedream 5 Pro at $0.045 per image, and $0.03 per input
+  // image (none are sent); it states no price by size.
+  // https://developers.cloudflare.com/ai/models/bytedance/seedream-5-pro/
+  if (settings.model === "bytedance/seedream-5-pro") return 4_500;
+  if (getGatewayModel(settings.model)?.kind === "video")
     return estimateVideoMilliunits(settings);
   throw new MediaSettingsError(`${settings.model} is not a gateway model`);
 }
@@ -163,11 +182,23 @@ export function gatewayInput(
     if (references.length === 0) return body;
     return { ...body, images: references.map(gptImageReference) };
   }
+  if (settings.model === "bytedance/seedream-5-pro") {
+    if (references.length > 0)
+      throw new MediaSettingsError(
+        "bytedance/seedream-5-pro takes no reference images here",
+      );
+    // `watermark` is a required field; false adds none.
+    return {
+      prompt: settings.prompt,
+      size: sizeOf(settings),
+      watermark: false,
+    };
+  }
   const checked = validateMediaGenerationSettings({
     ...settings,
     references: settings.references?.map((reference) => ({ ...reference })),
   });
-  const model = getMediaModel(checked.model);
+  const model = getGatewayModel(checked.model);
   if (
     model?.video == null ||
     checked.resolution === undefined ||

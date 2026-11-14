@@ -316,7 +316,7 @@ const freezeModel = (
 const GPT_IMAGE_MAX_EDGE = 3_840;
 /** Largest pixel count the documented size grammar admits. */
 const GPT_IMAGE_MAX_PIXELS = 8_294_400;
-const GPT_IMAGE_RATIOS = [
+const COMMON_IMAGE_RATIOS = [
   [1, 1],
   [4, 3],
   [3, 4],
@@ -330,7 +330,7 @@ const gptImageSizes: readonly string[] = (() => {
   const keep = new Set(["1024x1024", "1024x1536", "1536x1024"]);
   const standard: string[] = [];
   const largest: string[] = [];
-  for (const [across, down] of GPT_IMAGE_RATIOS) {
+  for (const [across, down] of COMMON_IMAGE_RATIOS) {
     const divisor = ((a: number, b: number): number => {
       let x = a;
       let y = b;
@@ -360,6 +360,30 @@ const gptImageSizes: readonly string[] = (() => {
   }
   return Object.freeze([...standard, ...largest]);
 })();
+
+/** The common ratios as exact 16-aligned sizes of about `area` pixels. */
+const commonRatioSizes = (area: number): readonly string[] =>
+  Object.freeze(
+    COMMON_IMAGE_RATIOS.map(([across, down]) => {
+      let x: number = across;
+      let y: number = down;
+      while (y !== 0) [x, y] = [y, x % y];
+      const unitW = (16 * across) / x;
+      const unitH = (16 * down) / x;
+      const steps = Math.round(Math.sqrt(area / (unitW * unitH)));
+      return `${String(unitW * steps)}x${String(unitH * steps)}`;
+    }),
+  );
+
+/**
+ * Seedream 5 Pro takes `size` as a string: "1K", "2K" or an explicit pixel
+ * size (the page's examples are "1K" and "1536x864"). It documents no bounds,
+ * so each common ratio is listed as an exact explicit size at the scale of its
+ * own 1536x864 example (about 1.3 megapixels), where 16:9 is that example.
+ * https://developers.cloudflare.com/ai/models/bytedance/seedream-5-pro/
+ * https://developers.cloudflare.com/ai/models/bytedance/seedream-5-pro/schema-input.json
+ */
+const seedreamSizes = commonRatioSizes(1536 * 864);
 
 const videoShortEdges = {
   "480p": 480,
@@ -809,6 +833,36 @@ const models: readonly MediaModel[] = Object.freeze([
       referenceFormat: "webp",
     },
   }),
+  freezeModel({
+    id: "bytedance/seedream-5-pro",
+    // The page documents no prompt maxLength (schema-input.json has none):
+    // keep the 2,048 host cap.
+    maxPromptLength: UNDOCUMENTED_PROMPT_LENGTH,
+    // The page's example results are .jpeg URLs; the schema has no format field.
+    outputFormats: Object.freeze(["jpeg"]),
+    tier: "premium",
+    label: "Seedream 5 Pro — ByteDance, high-quality images",
+    sizes: seedreamSizes,
+    input: {
+      transport: "json",
+      dimensions: "own",
+      // The longest listed edge: the page documents no maximum.
+      maxDimension: 1792,
+      maxDimensionDocumented: false,
+      defaultWidth: 1536,
+      defaultHeight: 864,
+      steps: "fixed",
+      maxSteps: null,
+      defaultSteps: null,
+      // The page says the model takes up to 10 reference images (`image`, a
+      // string or 1-10 strings) but shows only URL inputs and states no
+      // base64 or data-URI form, so Prints sends none until it does.
+      referenceField: null,
+      maxReferences: 0,
+      referenceDimension: 512,
+      referenceFormat: "png",
+    },
+  }),
   videoModel(
     mediaVideoModelIdSchema.enum.seedance25,
     "Seedance 2.5",
@@ -869,13 +923,119 @@ const models: readonly MediaModel[] = Object.freeze([
   minimaxVideoModel(),
 ]);
 
-/** The immutable image and video model catalog. */
+/** The Fungi gateway provider's own immutable image and video model catalog. */
 export const mediaModels: readonly MediaModel[] = models;
-/** List all image and video models in catalog order. */
+/**
+ * One catalogue entry. Same grammar as the gateway's wire entry, except that a
+ * video model may name `host` as its provider family: the injected provider
+ * owns that model's wire grammar and Darkroom builds no gateway request for it.
+ */
+export const mediaCatalogueModelSchema = mediaModelSchema
+  .unwrap()
+  .extend({
+    /** Video length constraints, or null for a still-image model. */
+    video: mediaVideoSchema
+      .unwrap()
+      .unwrap()
+      .extend({
+        /** Provider translation family, or `host` for a host-injected provider. */
+        provider: z.enum({
+          /** Seedance integer duration and data-URI image fields. */
+          seedance: "seedance",
+          /** Veo duration string and base64 image_input. */
+          veo: "veo",
+          /** MiniMax multimodal `content[]` array and uppercase resolution. */
+          minimax: "minimax",
+          /** The injected provider owns the wire grammar. */
+          host: "host",
+        }),
+      })
+      .readonly()
+      .nullable(),
+  })
+  .readonly();
+/** One provider's catalogue entry. */
+export type MediaCatalogueModel = z.output<typeof mediaCatalogueModelSchema>;
+/** One provider's model list: the typed bounds every request is checked against. */
+export type MediaCatalogue = readonly MediaCatalogueModel[];
+/** Upper bound on one provider's model list. */
+const MAX_CATALOGUE_MODELS = 256;
+
+/**
+ * Decode a host-supplied provider catalogue. Each entry is the same typed wire
+ * grammar the built-in catalogue uses; this adds the cross-field facts the
+ * validator relies on (unique ids, video metadata iff `kind` is video, defaults
+ * inside their own bounds).
+ */
+export const mediaCatalogueSchema = z
+  .array(mediaCatalogueModelSchema)
+  .min(1)
+  .max(MAX_CATALOGUE_MODELS)
+  .superRefine((entries, context) => {
+    const seen = new Set<string>();
+    entries.forEach((model, index) => {
+      const report = (message: string) => {
+        context.addIssue({ code: "custom", message, path: [index] });
+      };
+      if (seen.has(model.id)) report(`duplicate model id "${model.id}"`);
+      seen.add(model.id);
+      if ((model.kind === "video") !== (model.video !== null))
+        report(
+          `${model.id} must carry video bounds exactly when kind is video`,
+        );
+      const video = model.video;
+      if (video === null) return;
+      if (
+        video.minSeconds > video.maxSeconds ||
+        video.durations.some(
+          (seconds) => seconds < video.minSeconds || seconds > video.maxSeconds,
+        ) ||
+        !video.durations.includes(video.defaultSeconds)
+      )
+        report(
+          `${model.id} durations must sit inside min/max and include the default`,
+        );
+      if (
+        !video.formats.some(
+          ({ resolution, aspectRatio }) =>
+            resolution === video.defaultResolution &&
+            aspectRatio === video.defaultAspectRatio,
+        )
+      )
+        report(
+          `${model.id} formats must include the default resolution and aspect`,
+        );
+    });
+  })
+  .transform((entries): MediaCatalogue =>
+    Object.freeze(
+      entries.map((model) =>
+        Object.freeze({ ...model, input: Object.freeze(model.input) }),
+      ),
+    ),
+  );
+
+/** Decode untrusted catalogue data, throwing a MediaSettingsError that names the first problem. */
+export const parseMediaCatalogue = (raw: unknown): MediaCatalogue => {
+  const parsed = mediaCatalogueSchema.safeParse(raw);
+  if (!parsed.success)
+    throw new MediaSettingsError(
+      `media catalogue is invalid: ${parsed.error.issues[0]?.message ?? "unreadable"}`,
+    );
+  return parsed.data;
+};
+
+/** List the gateway provider's models in catalog order. */
 export const listMediaModels = (): readonly MediaModel[] => mediaModels;
-/** Find a model by provider identifier, returning undefined when it is absent. */
-export const getMediaModel = (id: string): MediaModel | undefined =>
+/** Find a model in the Fungi gateway's own catalogue; gateway-internal code never sees a custom provider's models. */
+export const getGatewayModel = (id: string): MediaModel | undefined =>
   mediaModels.find((model) => model.id === id);
+/** Find a model in `catalogue` (the gateway's by default), or undefined when absent. */
+export const getMediaModel = (
+  id: string,
+  catalogue: MediaCatalogue = mediaModels,
+): MediaCatalogueModel | undefined =>
+  catalogue.find((model) => model.id === id);
 
 /** Invalid generation settings or unsupported model parameters. */
 export class MediaSettingsError extends Error {
