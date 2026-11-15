@@ -27,6 +27,7 @@ const mediaModelPriceEstimateSchema: ZodObject<{
      height: ZodOptional<ZodNumber>;
      steps: ZodOptional<ZodNumber>;
      durationSeconds: ZodOptional<ZodNumber>;
+     targetMegapixels: ZodOptional<ZodNumber>;
      voiceId: ZodOptional<ZodString>;
      resolution: ZodOptional<ZodEnum<{
         p480: "480p";
@@ -84,6 +85,7 @@ const mediaCatalogModelSchema: ZodReadonly<ZodObject<{
         height: ZodOptional<ZodNumber>;
         steps: ZodOptional<ZodNumber>;
         durationSeconds: ZodOptional<ZodNumber>;
+        targetMegapixels: ZodOptional<ZodNumber>;
         voiceId: ZodOptional<ZodString>;
         resolution: ZodOptional<ZodEnum<{
            p480: ...;
@@ -200,6 +202,26 @@ const mediaCatalogModelSchema: ZodReadonly<ZodObject<{
      seconds: ZodNullable<ZodReadonly<ZodObject<..., ...>>>;
      milliunitsPerUnit: ZodNumber;
   }, $strict>>>>;
+  billingUnit: ZodEnum<{
+     image: "image";
+     video_second: "video_second";
+     audio_second: "audio_second";
+     audio_character_block: "audio_character_block";
+  }>;
+  transform: ZodNullable<ZodLazy<ZodReadonly<ZodObject<{
+     operation: ZodEnum<{
+        remove_background: "remove_background";
+        upscale: "upscale";
+     }>;
+     source: ZodReadonly<ZodObject<{
+        formats: ...;
+        maxBytes: ...;
+        maxPixels: ...;
+     }, $strict>>;
+     defaultMegapixels: ZodNullable<ZodNumber>;
+     milliunits: ZodNullable<ZodNumber>;
+     sizes: ZodReadonly<ZodArray<ZodReadonly<...>>>;
+  }, $strict>>>>;
 }, $strict>>;
 ```
 
@@ -225,6 +247,7 @@ const mediaModelsSchema: ZodLazy<ZodArray<ZodReadonly<ZodObject<{
         height: ZodOptional<...>;
         steps: ZodOptional<...>;
         durationSeconds: ZodOptional<...>;
+        targetMegapixels: ZodOptional<...>;
         voiceId: ZodOptional<...>;
         resolution: ZodOptional<...>;
         aspectRatio: ZodOptional<...>;
@@ -305,6 +328,19 @@ const mediaModelsSchema: ZodLazy<ZodArray<ZodReadonly<ZodObject<{
      defaultVoiceId: ZodNullable<...>;
      seconds: ZodNullable<...>;
      milliunitsPerUnit: ZodNumber;
+  }, $strict>>>>;
+  billingUnit: ZodEnum<{
+     image: "image";
+     video_second: "video_second";
+     audio_second: "audio_second";
+     audio_character_block: "audio_character_block";
+  }>;
+  transform: ZodNullable<ZodLazy<ZodReadonly<ZodObject<{
+     operation: ZodEnum<...>;
+     source: ZodReadonly<...>;
+     defaultMegapixels: ZodNullable<...>;
+     milliunits: ZodNullable<...>;
+     sizes: ZodReadonly<...>;
   }, $strict>>>>;
 }, $strict>>>>;
 ```
@@ -615,6 +651,13 @@ const appMediaModelsOutcomeSchema: ZodUnion<readonly [ZodLazy<ZodArray<ZodReadon
   sizes: ZodNullable<ZodReadonly<ZodArray<ZodString>>>;
   video: ZodNullable<ZodLazy<ZodReadonly<ZodObject<..., ...>>>>;
   audio: ZodNullable<ZodLazy<ZodReadonly<ZodObject<..., ...>>>>;
+  billingUnit: ZodEnum<{
+     image: "image";
+     video_second: "video_second";
+     audio_second: "audio_second";
+     audio_character_block: "audio_character_block";
+  }>;
+  transform: ZodNullable<ZodLazy<ZodReadonly<ZodObject<..., ...>>>>;
 }, $strict>>>>, ZodUnion<readonly [ZodObject<{
   error: ZodEnum<{
      revoked: "revoked";

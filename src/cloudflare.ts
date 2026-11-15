@@ -14,6 +14,12 @@ export {
   createImagesViewFitter,
   type MediaImagePort,
 } from "./cloudflare/reference-images.js";
+export {
+  createR2MediaDestination,
+  type MediaR2Bucket,
+  type R2MediaDestination,
+  type R2MediaDestinationOptions,
+} from "./cloudflare/r2-destination.js";
 
 export { MediaOperationOwner } from "./media-operation-owner.js";
 export type { MediaShareSource } from "./media-operation-owner.js";

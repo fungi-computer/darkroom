@@ -334,6 +334,123 @@ export const MAX_MEDIA_PROMPT_LENGTH = 32_000;
 /** Prompt cap kept for models whose provider documents no prompt limit. */
 const UNDOCUMENTED_PROMPT_LENGTH = 2_048;
 
+/**
+ * What a source-image operation does to its one reference image. Both write a
+ * new image and never touch the source.
+ */
+export const mediaTransformOperationSchema = z.enum({
+  /** Cut the foreground out onto a transparent PNG. */
+  remove_background: "remove_background",
+  /** Enlarge the image to a chosen output size in megapixels. */
+  upscale: "upscale",
+});
+/** A source-image operation. */
+export type MediaTransformOperation = z.output<
+  typeof mediaTransformOperationSchema
+>;
+
+/**
+ * Facts of a catalog entry that edits one source image rather than generating
+ * from a prompt. The source limits are Botanical's own conservative bounds, not
+ * Cloudflare's: neither model page publishes an input size limit.
+ */
+export const mediaTransformSchema = z.lazy(() =>
+  z
+    .strictObject({
+      /** What the operation does. */
+      operation: mediaTransformOperationSchema,
+      /** Botanical's limits on the one source image, checked before any paid call. */
+      source: z
+        .strictObject({
+          /** Accepted source encodings. */
+          formats: z.array(mediaRequestedImageFormatSchema).readonly(),
+          /** Largest source, in bytes (the hosts' existing reference read limit). */
+          maxBytes: z.number().int().positive(),
+          /** Largest source, in pixels. */
+          maxPixels: z.number().int().positive(),
+        })
+        .readonly(),
+      /** Output size chosen when none is given, or null when the operation has no size. */
+      defaultMegapixels: z.number().int().positive().nullable(),
+      /**
+       * Provider milliunits for one image when the price does not depend on
+       * the output size, else null (1 USD = 100,000 milliunits).
+       */
+      milliunits: z.number().int().positive().nullable(),
+      /** Output sizes offered, each with its provider milliunits; empty for a flat price. */
+      sizes: z
+        .array(
+          z
+            .strictObject({
+              /** Output size in megapixels. */
+              megapixels: z.number().int().positive(),
+              /** Provider milliunits for one image at this size. */
+              milliunits: z.number().int().positive(),
+            })
+            .readonly(),
+        )
+        .readonly(),
+    })
+    .readonly(),
+);
+/** Immutable source-image operation facts. */
+export type MediaTransform = z.output<typeof mediaTransformSchema>;
+
+/**
+ * Pruna P-Image-Upscale's published price per image by output size, copied
+ * exactly: [largest output megapixels in the tier, USD].
+ * https://developers.cloudflare.com/ai/models/pruna/p-image-upscale/
+ */
+const UPSCALE_PRICE_TIERS: readonly (readonly [number, number])[] = [
+  [4, 0.005],
+  [8, 0.01],
+  [16, 0.02],
+  [32, 0.04],
+  [64, 0.06],
+  [128, 0.12],
+];
+/** The output sizes Botanical offers; the provider accepts 1 to 128. */
+const UPSCALE_TARGET_MEGAPIXELS = [4, 8, 16] as const;
+const USD_TO_MILLIUNITS = 100_000;
+/** Bria RMBG 2.0's published price per image: https://developers.cloudflare.com/ai/models/bria/remove-background/ */
+const REMOVE_BACKGROUND_USD = 0.018;
+/** Botanical's own source bounds for both operations (see {@link mediaTransformSchema}). */
+const TRANSFORM_SOURCE_MAX_BYTES = 8 * 1024 * 1024;
+const TRANSFORM_SOURCE_MAX_PIXELS = 25_000_000;
+
+/**
+ * What one generation bills: whole images, whole seconds of video or music, or
+ * blocks of {@link AUDIO_CHARACTER_BLOCK} speech characters (so a per-character
+ * provider rate is marked up once per block, not rounded up per character).
+ */
+export const mediaBillingUnitSchema = z.enum({
+  /** One image. */
+  image: "image",
+  /** One whole second of video. */
+  video_second: "video_second",
+  /** One whole second of music. */
+  audio_second: "audio_second",
+  /** One block of speech characters. */
+  audio_character_block: "audio_character_block",
+});
+/** The unit a model's generations are billed in. */
+export type MediaBillingUnit = z.output<typeof mediaBillingUnitSchema>;
+
+/** The one rule mapping a model's kind (and speech or music mode) to its billing unit. */
+export const mediaBillingUnit = (
+  model: Readonly<{
+    kind: "image" | "video" | "audio";
+    audio: Readonly<{ mode: "speech" | "music" }> | null;
+  }>,
+): MediaBillingUnit => {
+  if (model.kind === "video") return "video_second";
+  if (model.kind === "audio")
+    return model.audio?.mode === "speech"
+      ? "audio_character_block"
+      : "audio_second";
+  return "image";
+};
+
 /** Public wire grammar for a catalog entry returned by the Media owner. */
 export const mediaModelSchema = z
   .strictObject({
@@ -373,6 +490,15 @@ export const mediaModelSchema = z
     video: mediaVideoSchema.nullable(),
     /** Speech or music constraints, or null for an image or video model. */
     audio: mediaAudioSchema.nullable(),
+    /**
+     * Price basis: the unit one generation bills in. The cost of those units
+     * depends on the settings (size, steps, resolution, sound, references), so
+     * an App shows `priceEstimate` where its host supplies one and otherwise
+     * asks its host for a quote of the exact settings.
+     */
+    billingUnit: mediaBillingUnitSchema,
+    /** Source-image operation facts, or null for a model that generates from a prompt. */
+    transform: mediaTransformSchema.nullable(),
   })
   .readonly();
 
@@ -384,21 +510,36 @@ export type MediaModel = z.output<typeof mediaModelSchema>;
 const freezeModel = (
   model: Omit<
     MediaModel,
-    "kind" | "sizes" | "video" | "audio" | "outputFormats"
+    | "kind"
+    | "sizes"
+    | "video"
+    | "audio"
+    | "outputFormats"
+    | "billingUnit"
+    | "transform"
   > &
     Partial<
-      Pick<MediaModel, "kind" | "sizes" | "video" | "audio" | "outputFormats">
+      Pick<
+        MediaModel,
+        "kind" | "sizes" | "video" | "audio" | "outputFormats" | "transform"
+      >
     >,
-): MediaModel =>
-  Object.freeze({
-    kind: "image",
+): MediaModel => {
+  const entry = {
+    kind: "image" as const,
     sizes: null,
     video: null,
     audio: null,
+    transform: null,
     outputFormats: Object.freeze([]),
     ...model,
+  };
+  return Object.freeze({
+    ...entry,
+    billingUnit: mediaBillingUnit(entry),
     input: Object.freeze(model.input),
   });
+};
 
 /**
  * GPT Image 2's `size` is `auto` or any WIDTHxHEIGHT with each edge at most
@@ -851,6 +992,76 @@ function audioModel(
   });
 }
 
+/** The published tier a chosen output size falls in; every offered size has one. */
+function upscaleTierUsd(megapixels: number): number {
+  const tier = UPSCALE_PRICE_TIERS.find(([largest]) => megapixels <= largest);
+  if (tier === undefined)
+    throw new Error(`no published upscale price for ${String(megapixels)} MP`);
+  return tier[1];
+}
+
+/** A source-image operation model: one reference in, one new image out, no prompt text sent. */
+function transformModel(
+  input: Readonly<{
+    id: string;
+    label: string;
+    tier: MediaModelTier;
+    operation: MediaTransformOperation;
+    outputFormat: "png" | "webp";
+    defaultMegapixels: number | null;
+    flatUsd: number | null;
+    sizes: readonly Readonly<{ megapixels: number; usd: number }>[];
+  }>,
+): MediaModel {
+  return freezeModel({
+    id: input.id,
+    label: input.label,
+    tier: input.tier,
+    outputFormats: Object.freeze([input.outputFormat]),
+    // The prompt only labels the saved output ("Remove background"); the
+    // provider never reads it.
+    maxPromptLength: 256,
+    transform: Object.freeze({
+      operation: input.operation,
+      source: Object.freeze({
+        formats: Object.freeze(["png", "jpeg"] as const),
+        maxBytes: TRANSFORM_SOURCE_MAX_BYTES,
+        maxPixels: TRANSFORM_SOURCE_MAX_PIXELS,
+      }),
+      defaultMegapixels: input.defaultMegapixels,
+      milliunits:
+        input.flatUsd === null
+          ? null
+          : Math.round(input.flatUsd * USD_TO_MILLIUNITS),
+      sizes: Object.freeze(
+        input.sizes.map(({ megapixels, usd }) =>
+          Object.freeze({
+            megapixels,
+            milliunits: Math.round(usd * USD_TO_MILLIUNITS),
+          }),
+        ),
+      ),
+    }),
+    input: {
+      transport: "json",
+      dimensions: "none",
+      maxDimension: null,
+      maxDimensionDocumented: false,
+      defaultWidth: 1024,
+      defaultHeight: 1024,
+      steps: "fixed",
+      maxSteps: null,
+      defaultSteps: null,
+      referenceField: "image",
+      maxReferences: 1,
+      // The hosts' reference fitter only shrinks; this keeps any source within
+      // the pixel bound at its original size.
+      referenceDimension: 8_192,
+      referenceFormat: "png",
+    },
+  });
+}
+
 const models: readonly MediaModel[] = Object.freeze([
   freezeModel({
     id: "@cf/black-forest-labs/flux-1-schnell",
@@ -1060,6 +1271,31 @@ const models: readonly MediaModel[] = Object.freeze([
       referenceFormat: "png",
     },
   }),
+  transformModel({
+    id: "bria/remove-background",
+    label: "Remove background — Bria RMBG 2.0",
+    tier: "draft",
+    operation: "remove_background",
+    outputFormat: "png",
+    flatUsd: REMOVE_BACKGROUND_USD,
+    sizes: [],
+    defaultMegapixels: null,
+  }),
+  transformModel({
+    id: "pruna/p-image-upscale",
+    label: "Upscale — Pruna P-Image-Upscale",
+    tier: "draft",
+    operation: "upscale",
+    // Lossless output would swell past the output byte bound at 16 megapixels;
+    // WebP keeps transparency.
+    outputFormat: "webp",
+    flatUsd: null,
+    sizes: UPSCALE_TARGET_MEGAPIXELS.map((megapixels) => ({
+      megapixels,
+      usd: upscaleTierUsd(megapixels),
+    })),
+    defaultMegapixels: 4,
+  }),
   videoModel(
     mediaVideoModelIdSchema.enum.seedance25,
     "Seedance 2.5",
@@ -1144,8 +1380,12 @@ export const mediaModels: readonly MediaModel[] = models;
 export const mediaCatalogueModelSchema = mediaModelSchema
   .unwrap()
   .extend({
+    /** Optional on a host's entry because Darkroom derives it; a stated value must match. */
+    billingUnit: mediaBillingUnitSchema.optional(),
     /** Speech or music constraints; a host's catalogue omits it unless it lists audio models. */
     audio: mediaAudioSchema.unwrap().nullable().default(null),
+    /** Source-image operation facts; a host's catalogue omits it unless it lists such models. */
+    transform: mediaTransformSchema.unwrap().nullable().default(null),
     /** Video length constraints, or null for a still-image model. */
     video: mediaVideoSchema
       .unwrap()
@@ -1205,6 +1445,13 @@ export const mediaCatalogueSchema = z
         report(
           `${model.id} must carry audio bounds exactly when kind is audio`,
         );
+      if (
+        model.billingUnit !== undefined &&
+        model.billingUnit !== mediaBillingUnit(model)
+      )
+        report(
+          `${model.id} billingUnit must be ${mediaBillingUnit(model)} for ${model.kind === "image" ? "an" : "a"} ${model.kind} model`,
+        );
       const video = model.video;
       if (video === null) return;
       if (
@@ -1245,6 +1492,28 @@ export const parseMediaCatalogue = (raw: unknown): MediaCatalogue => {
       `media catalogue is invalid: ${parsed.error.issues[0]?.message ?? "unreadable"}`,
     );
   return parsed.data;
+};
+
+/** A catalogue entry as the public `/models` list returns it: the entry plus its derived billing unit. */
+export const withBillingUnit = (
+  model: MediaCatalogueModel,
+): MediaCatalogueModel & Readonly<{ billingUnit: MediaBillingUnit }> => ({
+  ...model,
+  billingUnit: mediaBillingUnit(model),
+});
+
+/**
+ * Provider milliunits for one image of a source-image operation at `megapixels`
+ * (omitted: the model's default), or undefined when that output size is not offered.
+ */
+export const transformMilliunits = (
+  transform: MediaTransform,
+  megapixels: number | undefined,
+): number | undefined => {
+  if (transform.milliunits !== null)
+    return megapixels === undefined ? transform.milliunits : undefined;
+  const size = megapixels ?? transform.defaultMegapixels;
+  return transform.sizes.find((price) => price.megapixels === size)?.milliunits;
 };
 
 /** List the gateway provider's models in catalog order. */

@@ -1,6 +1,6 @@
 {
   "name": "@fungi.computer/darkroom",
-  "version": "0.9.2",
+  "version": "0.10.0",
   "author": "Levi <levi@technomancy.dev>",
   "description": "Media generation, durable output retention and provenance with host-owned authority and billing",
   "type": "module",
@@ -48,27 +48,15 @@
     "LICENSE"
   ],
   "scripts": {
-    "lint": "eslint src test examples --max-warnings=0 && ../../node_modules/.bin/oxlint --config ../../oxlint.config.ts --deny-warnings src test examples",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:workers": "tsc --noEmit --strict --target ES2024 --lib ES2024,ESNext.Disposable --module NodeNext --moduleResolution NodeNext --types @cloudflare/workers-types/experimental --skipLibCheck false test/stranger/native-consumer.mts",
     "build": "pnpm run clean && tsc -p tsconfig.build.json",
     "clean": "node --input-type=module --eval \"import { rm } from 'node:fs/promises'; await rm('dist', { recursive: true, force: true });\"",
-    "test": "pnpm run test:node && pnpm run test:cloudflare",
-    "smoke": "node test/stranger/runtime.mjs",
-    "test:node": "vitest run --config vitest.node.config.ts",
-    "test:cloudflare": "vitest run --config vitest.cloudflare.config.ts",
-    "format:check": "node ../../tooling/repository/scripts/format-package-check.mjs",
-    "lint:anti-slop": "node ../../tooling/repository/scripts/lint-package-anti-slop.mjs",
-    "test:unit": "pnpm run test:node",
-    "test:merge": "pnpm run test:cloudflare",
-    "docs": "tsx ../../tooling/repository/src/docs/cli.ts check --root ../..",
-    "docs:write": "tsx ../../tooling/repository/src/docs/cli.ts write --root ../..",
-    "pack": "mkdir -p ../../.botanical/darkroom-pack && pnpm pack --pack-destination ../../.botanical/darkroom-pack",
-    "stranger": "tsx ../../tooling/repository/src/artifacts/cli.ts --repo-root ../.. ."
+    "smoke": "node test/stranger/runtime.mjs"
   },
   "dependencies": {
     "zod": "4.4.3",
-    "@fungi.computer/cairn": "workspace:*",
+    "@fungi.computer/cairn": "0.1.0",
     "effect": "4.0.2",
     "hono": "4.13.5",
     "png-chunks-extract": "1.0.0",
@@ -77,10 +65,10 @@
     "music-metadata": "12.3.3",
     "xmlbuilder2": "4.0.3",
     "exifreader": "4.46.0",
-    "@fungi.computer/ts-webp": "workspace:*",
+    "@fungi.computer/ts-webp": "0.1.6",
     "@xmldom/xmldom": "0.9.12",
-    "@fungi.computer/agar": "workspace:*",
-    "@fungi.computer/capnweb": "workspace:*"
+    "@fungi.computer/agar": "0.17.0",
+    "@fungi.computer/capnweb": "0.12.0-fungi.0"
   },
   "devDependencies": {
     "@types/node": "24.13.3",

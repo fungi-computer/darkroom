@@ -78,6 +78,17 @@ const mediaFailureSchema: ZodObject<{
 Sanitized HTTP refusal emitted by a Media host and decoded at the browser
 boundary.
 
+---
+
+### backgroundProviderTimeoutMs
+
+```ts
+const backgroundProviderTimeoutMs: number;
+```
+
+The longest a background provider call runs before it is cut off, safely inside
+the 15-minute alarm wall-clock limit that would kill the call.
+
 ## Functions
 
 ### readMediaFailure()
@@ -90,12 +101,12 @@ function readMediaFailure(
   error: string;
   stage:
     | "provider"
+    | "operation"
     | "admission"
     | "generation-authorization"
     | "settings"
     | "estimate"
     | "billing"
-    | "operation"
     | "normalization"
     | "artifact"
     | "destination-authorization"
@@ -125,9 +136,9 @@ Read and decode one Media host failure at the browser HTTP boundary.
 
 #### Returns
 
-`Promise`\< \| \{ `error`: `string`; `stage`: \| `"provider"` \| `"admission"`
-\| `"generation-authorization"` \| `"settings"` \| `"estimate"` \| `"billing"`
-\| `"operation"` \| `"normalization"` \| `"artifact"` \|
+`Promise`\< \| \{ `error`: `string`; `stage`: \| `"provider"` \| `"operation"`
+\| `"admission"` \| `"generation-authorization"` \| `"settings"` \| `"estimate"`
+\| `"billing"` \| `"normalization"` \| `"artifact"` \|
 `"destination-authorization"` \| `"destination-write"`; `code`: \|
 `"CAPABILITY_DENIED"` \| `"DAILY_LIMIT_REACHED"` \| `"INSUFFICIENT_CREDIT"` \|
 `"HOST_FAILURE"` \| `"INVALID_ARGUMENT"` \| `"MEDIA_PROVIDER_FAILURE"` \|

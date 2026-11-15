@@ -14,8 +14,17 @@ export class StandaloneMedia extends NativeStandaloneMedia {
   constructor(state, env) {
     super(state, {
       ...env,
+      // The Images binding is not a provider; report fixed metadata for the 1x1 GIFs the proofs store.
+      IMAGES: {
+        info: async () => ({ format: "image/gif", width: 1, height: 1 }),
+      },
       AI: {
-        run: async () => {
+        run: async (_model, input) => {
+          if (input.multipart !== undefined)
+            await env.PROOF.put(
+              "provider-input",
+              await new globalThis.Response(input.multipart.body).text(),
+            );
           const previous = await env.PROOF.get("provider-count");
           const count = previous === null ? 0 : Number(await previous.text());
           await env.PROOF.put("provider-count", String(count + 1));
@@ -27,12 +36,12 @@ export class StandaloneMedia extends NativeStandaloneMedia {
       },
       OUTPUTS: {
         get: env.OUTPUTS.get.bind(env.OUTPUTS),
-        put: async (key, bytes) => {
+        put: async (key, bytes, options) => {
           if (await env.PROOF.get("fail-next-save")) {
             await env.PROOF.delete("fail-next-save");
             throw new Error("Injected destination failure");
           }
-          return env.OUTPUTS.put(key, bytes);
+          return env.OUTPUTS.put(key, bytes, options);
         },
       },
     });

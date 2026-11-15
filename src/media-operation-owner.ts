@@ -26,13 +26,12 @@ import {
   mediaFailureStageSchema,
   type MediaFailureStage,
 } from "./execution-error.js";
+import { backgroundProviderTimeoutMs } from "./media-run-lifetime.js";
 import {
   mediaProviderDiagnosticWireSchema,
   type MediaProviderDiagnostic,
 } from "@fungi.computer/agar/errors";
 
-/** Safely inside the 15-minute alarm wall-clock limit that would kill the call. */
-const backgroundProviderTimeoutMs = 12 * 60_000;
 const providerFailureSchema = z.strictObject({
   stage: mediaFailureStageSchema.extract(["provider", "normalization"]),
   safetyRefused: z.boolean(),

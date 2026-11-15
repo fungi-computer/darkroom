@@ -1,6 +1,7 @@
 import * as z from "zod";
 import { reportCatchFailure } from "./failure.js";
 import type { MediaAudioReferenceBytes } from "./audio-reference-types.js";
+import { sniffImageFormat } from "./media-content-type.js";
 import { referenceImageSizeIsValid } from "./reference-image-size.js";
 import {
   getGatewayModel,
@@ -14,8 +15,11 @@ import {
   mediaVideoAspectRatioSchema,
   mediaVideoReferenceRoleSchema,
   MAX_MEDIA_PROMPT_LENGTH,
+  transformMilliunits,
   type MediaAudioModel,
+  type MediaCatalogueModel,
   type MediaModel,
+  type MediaTransform,
   type MediaVideoReferenceRole,
   type MediaCatalogue,
   type MediaVideoResolution,
@@ -56,10 +60,16 @@ export {
   mediaAudioModelIdSchema,
   mediaAudioSchema,
   mediaAudioVoiceSchema,
+  mediaBillingUnitSchema,
   AUDIO_CHARACTER_BLOCK,
+  mediaTransformSchema,
+  mediaTransformOperationSchema,
 } from "./model-catalog.js";
 export type {
+  MediaTransform,
+  MediaTransformOperation,
   MediaCatalogue,
+  MediaBillingUnit,
   MediaCatalogueModel,
   MediaModel,
   MediaModelInput,
@@ -117,6 +127,8 @@ export type MediaGenerationSettings = Readonly<{
   steps?: number;
   /** Video and music models only: output length in whole seconds. */
   durationSeconds?: number;
+  /** Upscale only: the output size in megapixels. */
+  targetMegapixels?: number;
   /** Speech models only: the catalog voice that reads the prompt. */
   voiceId?: string;
   /** Video resolution selector, normalized from the catalog. */
@@ -239,6 +251,8 @@ export const mediaGenerationSettingsSchema = z
     steps: z.number().int().optional(),
     /** Requested video or music length in whole seconds. */
     durationSeconds: z.number().int().optional(),
+    /** Upscale only: the output size in megapixels, one of the model's offered sizes. */
+    targetMegapixels: z.number().int().optional(),
     /** Speech models only: a premade voice from the catalog; the default when omitted. */
     voiceId: z.string().min(1).max(64).optional(),
     /** Video resolution; must match the nominal width/height selector. */
@@ -328,6 +342,8 @@ type MutableMediaGenerationSettings<Reference> = {
   height?: number;
   steps?: number;
   durationSeconds?: number;
+  /** Upscale output size in megapixels. */
+  targetMegapixels?: number;
   voiceId?: string;
   /** Video resolution selector, normalized from the catalog. */
   resolution?: MediaVideoResolution;
@@ -460,6 +476,16 @@ function normalizeGenerationSettings<
   }
   if (input.voiceId !== undefined)
     throw new MediaSettingsError(`${model.id} does not take a voice`);
+  if (model.transform !== null)
+    return normalizeTransformSettings(
+      model,
+      model.transform,
+      prompt,
+      input,
+      normalize,
+    );
+  if (input.targetMegapixels !== undefined)
+    throw new MediaSettingsError(`${model.id} does not take an output size`);
   if (input.width === undefined || input.height === undefined)
     throw new MediaSettingsError(`${model.id} needs a width and a height`);
   const maximumDimension = model.video === null ? 4_096 : 5_040;
@@ -806,6 +832,65 @@ export function validateMediaVideoSelection(
   return Object.freeze(selection);
 }
 
+/**
+ * A source-image operation takes exactly one reference and, for an upscale, one
+ * of the model's offered output sizes. Its output size is the provider's, so it
+ * takes no width, height, steps or video settings.
+ */
+function normalizeTransformSettings<
+  InputReference extends {
+    path: string;
+    role?: MediaVideoReferenceRole | undefined;
+  },
+  Reference extends { path: string; role?: MediaVideoReferenceRole },
+>(
+  model: MediaCatalogueModel,
+  transform: MediaTransform,
+  prompt: string,
+  input: Omit<
+    z.output<typeof mediaGenerationSettingsSchema>,
+    "references" | "audioReferences"
+  > & {
+    references?: readonly InputReference[] | undefined;
+    audioReferences?: readonly InputReference[] | undefined;
+  },
+  normalize: (reference: InputReference) => Reference,
+): Readonly<MutableMediaGenerationSettings<Reference>> {
+  if (
+    input.width !== undefined ||
+    input.height !== undefined ||
+    input.steps !== undefined ||
+    input.durationSeconds !== undefined ||
+    input.resolution !== undefined ||
+    input.aspectRatio !== undefined ||
+    input.generateAudio !== undefined ||
+    input.audioReferences !== undefined
+  )
+    throw new MediaSettingsError(
+      `${model.id} takes one source image${transform.defaultMegapixels === null ? "" : " and an output size"}`,
+    );
+  const references = input.references;
+  if (references?.length !== 1 || references[0]?.role !== undefined)
+    throw new MediaSettingsError(`${model.id} needs exactly one source image`);
+  const settings: MutableMediaGenerationSettings<Reference> = {
+    model: model.id,
+    prompt,
+    references: Object.freeze(references.map(normalize)),
+  };
+  if (transform.defaultMegapixels === null) {
+    if (input.targetMegapixels !== undefined)
+      throw new MediaSettingsError(`${model.id} does not take an output size`);
+    return Object.freeze(settings);
+  }
+  const target = input.targetMegapixels ?? transform.defaultMegapixels;
+  if (transformMilliunits(transform, target) === undefined)
+    throw new MediaSettingsError(
+      `${model.id} accepts output sizes of ${transform.sizes.map((price) => String(price.megapixels)).join(", ")} megapixels`,
+    );
+  settings.targetMegapixels = target;
+  return Object.freeze(settings);
+}
+
 /** Neutral audio selection: speech takes a voice, music a length; model-specific limits are checked by validateMediaGenerationSettings. */
 export const mediaAudioSelectionSchema = z.lazy(() =>
   z.strictObject({
@@ -833,6 +918,39 @@ export type MediaReferenceReader = Readonly<{
   ) => Promise<MediaReferenceBytes>;
 }>;
 const imageFormats = new Set<ImageFormat>(["png", "jpeg", "gif", "webp"]);
+
+/**
+ * Refuse a source image the operation cannot take, with plain copy, before any
+ * paid call: an unsupported encoding, a source over Botanical's size bounds,
+ * or an upscale whose source is already as large as the chosen output.
+ */
+function checkTransformSource(
+  model: MediaCatalogueModel,
+  transform: MediaTransform,
+  settings: MediaGenerationSettings,
+  image: MediaReferenceBytes,
+): void {
+  const { source } = transform;
+  const named = (format: string) => (format === "jpeg" ? "JPEG" : "PNG");
+  if (!source.formats.some((format) => format === image.format))
+    throw new MediaSettingsError(
+      `${model.label} takes ${source.formats.map(named).join(" or ")} images, not ${image.format.toUpperCase()}.`,
+    );
+  if (image.bytes.byteLength > source.maxBytes)
+    throw new MediaSettingsError(
+      `That image is over ${String(source.maxBytes / (1024 * 1024))} MB, the most ${model.label} takes.`,
+    );
+  const pixels = image.width * image.height;
+  if (pixels > source.maxPixels)
+    throw new MediaSettingsError(
+      `That image is over ${String(source.maxPixels / 1_000_000)} megapixels, the most ${model.label} takes.`,
+    );
+  const target = settings.targetMegapixels;
+  if (target !== undefined && pixels >= target * 1_000_000)
+    throw new MediaSettingsError(
+      `That image is already ${(pixels / 1_000_000).toFixed(1)} megapixels. Choose a larger output than ${String(target)} megapixels.`,
+    );
+}
 
 /** Resolve only provider-accepted references through the caller's reader. */
 export const resolveMediaReferences = async (
@@ -870,6 +988,8 @@ export const resolveMediaReferences = async (
       throw new MediaSettingsError(
         `reference ${reference.computerId}:${reference.path} exceeds the bounded image contract`,
       );
+    if (model.transform !== null)
+      checkTransformSource(model, model.transform, settings, image);
     totalBytes += image.bytes.byteLength;
     if (totalBytes > MAX_REFERENCE_BODY_BYTES)
       throw new MediaSettingsError(
@@ -1095,50 +1215,6 @@ export const parseMediaProviderOutput = (
   };
 };
 
-const sniffImageFormat = (bytes: Uint8Array): ImageFormat | undefined => {
-  if (
-    bytes.length >= 8 &&
-    bytes[0] === 0x89 &&
-    bytes[1] === 0x50 &&
-    bytes[2] === 0x4e &&
-    bytes[3] === 0x47 &&
-    bytes[4] === 0x0d &&
-    bytes[5] === 0x0a &&
-    bytes[6] === 0x1a &&
-    bytes[7] === 0x0a
-  )
-    return "png";
-  if (
-    bytes.length >= 3 &&
-    bytes[0] === 0xff &&
-    bytes[1] === 0xd8 &&
-    bytes[2] === 0xff
-  )
-    return "jpeg";
-  if (
-    bytes.length >= 6 &&
-    bytes[0] === 0x47 &&
-    bytes[1] === 0x49 &&
-    bytes[2] === 0x46 &&
-    bytes[3] === 0x38 &&
-    (bytes[4] === 0x37 || bytes[4] === 0x39) &&
-    bytes[5] === 0x61
-  )
-    return "gif";
-  if (
-    bytes.length >= 12 &&
-    bytes[0] === 0x52 &&
-    bytes[1] === 0x49 &&
-    bytes[2] === 0x46 &&
-    bytes[3] === 0x46 &&
-    bytes[8] === 0x57 &&
-    bytes[9] === 0x45 &&
-    bytes[10] === 0x42 &&
-    bytes[11] === 0x50
-  )
-    return "webp";
-  return undefined;
-};
 const decodeEncoded = (
   value: string,
   maximumBytes: number,

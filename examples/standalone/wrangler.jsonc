@@ -21,4 +21,6 @@
     { "binding": "OUTPUTS", "bucket_name": "standalone-media-output" },
   ],
   "ai": { "binding": "AI" },
+  // Fits reference images read from the OUTPUTS bucket.
+  "images": { "binding": "IMAGES" },
 }

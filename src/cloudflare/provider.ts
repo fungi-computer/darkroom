@@ -49,25 +49,36 @@ type ImageEstimateParams = {
 
 /** Quote the catalog defaults through the exact estimator used before dispatch. */
 export function estimateMediaModel(model: MediaModel) {
-  const settings = validateMediaGenerationSettings(
+  const checked = validateMediaGenerationSettings(
     model.kind === "audio"
       ? { model: model.id, prompt: "x" }
-      : {
-          model: model.id,
-          prompt: "x",
-          width: model.input.defaultWidth,
-          height: model.input.defaultHeight,
-        },
+      : model.transform !== null
+        ? {
+            // A source-image operation is priced by its default output size;
+            // the placeholder reference is never read.
+            model: model.id,
+            prompt: "x",
+            references: [{ computerId: "estimate", path: "/estimate" }],
+          }
+        : {
+            model: model.id,
+            prompt: "x",
+            width: model.input.defaultWidth,
+            height: model.input.defaultHeight,
+          },
   );
+  // The placeholder reference only satisfies validation; the quote names none.
+  const { references: placeholder, ...settings } = checked;
+  void placeholder;
   return {
     /** An indicative quote, not an admitted generation receipt. */
     kind: "estimate" as const,
     /** Provider cost before the host's billing policy. */
     basis: "provider-cost" as const,
-    /** Catalog defaults, a one-character prompt and no references. */
+    /** Catalog defaults and a one-character prompt; never references. */
     settings,
     /** Estimated provider milliunits of a cent for these exact settings. */
-    costMilliunits: estimate(settings, []),
+    costMilliunits: estimate(checked, []),
   };
 }
 

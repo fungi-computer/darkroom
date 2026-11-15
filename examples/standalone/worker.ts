@@ -6,8 +6,11 @@ import {
   mediaRequestSchema,
 } from "@fungi.computer/darkroom/server";
 import {
+  createImagesReferenceFitter,
+  createR2MediaDestination,
   createWorkersAiMediaProvider,
   MediaOperationDO,
+  type MediaImagePort,
 } from "@fungi.computer/darkroom/cloudflare";
 
 export { MediaOperationDO };
@@ -19,6 +22,7 @@ export type StandaloneMediaEnv = {
   APP_ARTIFACTS: R2Bucket;
   OUTPUTS: R2Bucket;
   AI: Ai;
+  IMAGES: MediaImagePort;
 };
 
 /** One authenticated application; each request ID retains its own operation DO. */
@@ -35,13 +39,13 @@ export class StandaloneMedia extends DurableObject<StandaloneMediaEnv> {
       provider: createWorkersAiMediaProvider(this.env.AI),
       // This single-tenant host pays its own Workers AI account; nothing to bill.
       metering: "unmetered",
-      destination: {
-        // R2 keys need no directories. The bound bucket is this host's destination.
-        authorize: () => Promise.resolve(),
-        write: async (key, bytes) => {
-          await this.env.OUTPUTS.put(key, bytes);
-        },
-      },
+      // Reference images are read from, and outputs written to, the OUTPUTS bucket.
+      // Pass `authorize(key)` to apply your own permission check to every key.
+      destination: createR2MediaDestination({
+        bucket: this.env.OUTPUTS,
+        destinationId: "outputs",
+        fit: createImagesReferenceFitter(this.env.IMAGES),
+      }),
     });
     app.get("/object", async (context) => {
       const key = mediaRequestSchema.shape.path.safeParse(

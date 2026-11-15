@@ -262,6 +262,35 @@ const service = createMediaService({
 settings outside its bounds, is refused before billing or dispatch. The
 gateway's own models are refused by this provider the same way.
 
+### What a model entry tells an App
+
+`GET /models` and `listMediaModels()` return the same typed entry
+(`MediaModel`), so an App draws each model's controls from it and keeps no
+per-model rules of its own. Where the host mediates, it may remove a reference
+capability it cannot serve (`input.maxReferences` 0, `video.audioReferences`
+null) and adds `priceEstimate`.
+
+| An App needs          | Field                                                                                                                 |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Kind                  | `kind`: `image`, `video` or `audio`                                                                                   |
+| Sizes and aspects     | `sizes` (`WIDTHxHEIGHT` list, null for any size within `input.maxDimension`); `video.formats` (resolution and aspect) |
+| Duration options      | `video.durations`, `video.defaultSeconds`; music `audio.seconds`                                                      |
+| Maximum prompt length | `maxPromptLength` (characters)                                                                                        |
+| Reference images      | `input.maxReferences`; video `video.maxReferenceImages` and `video.referenceResolutions`                              |
+| Video reference roles | `video.referenceRoles` (`first-frame`, `last-frame`, `reference`)                                                     |
+| Audio references      | `video.audioReferences` (`{max, totalSeconds}` or null)                                                               |
+| Sound on video        | `video.supportsAudio`, `video.defaultGenerateAudio`                                                                   |
+| Price basis           | `billingUnit`: `image`, `video_second`, `audio_second` or `audio_character_block`                                     |
+
+`billingUnit` names what one generation is billed in; it is derived from the
+model's kind (and speech or music mode) by the same rule `mediaUnits` uses, so
+it cannot drift from billing. Cost per unit depends on the settings: output
+size, steps and references for images, resolution and sound for video. An App
+therefore shows `priceEstimate` (a labelled estimate at the model's defaults,
+added by hosts that quote) and asks its host to quote the exact settings, which
+runs `quoteMediaGeneration`, before it shows a final number. Speech bills one
+unit per 100 characters.
+
 ## API reference
 
 | Import                                         | Purpose                                                                        |
@@ -326,6 +355,55 @@ passed to the fitter. Your host authorizes each reference read.
 metadata while preserving the AI marker, print ID and image encoding. It returns
 bytes, MIME type and filename extension. The public XMP format uses
 `https://fungi.computer/ns/provenance/1.0/`.
+
+## Use your own R2 bucket
+
+Keep reference images and generated output in a bucket you already own.
+`createR2MediaDestination` (from `@fungi.computer/darkroom/cloudflare`) is the
+whole destination: object keys are the paths, and URLs are never accepted.
+
+```ts
+import { createMediaService } from "@fungi.computer/darkroom/server";
+import {
+  createImagesReferenceFitter,
+  createR2MediaDestination,
+  createWorkersAiMediaProvider,
+} from "@fungi.computer/darkroom/cloudflare";
+
+const app = createMediaService({
+  scope: {
+    actorId,
+    namespace: "studio",
+    owner: "media",
+    destinationId: "studio-bucket",
+  },
+  operations: env.MEDIA_OPERATION, // MediaOperationDO binding
+  provider: createWorkersAiMediaProvider(env.AI),
+  metering: "unmetered",
+  destination: createR2MediaDestination({
+    bucket: env.STUDIO_BUCKET, // your R2 binding
+    destinationId: "studio-bucket", // a reference must carry this same id
+    fit: createImagesReferenceFitter(env.IMAGES),
+    authorize: (key) => assertActorMayUse(actorId, key), // your permission check
+  }),
+});
+```
+
+Select a reference with `{ computerId: "studio-bucket", path: "<object key>" }`.
+The field is named `computerId` for historical reasons; it carries your
+destination id.
+
+The host still owns who may touch which key (`authorize`, which runs before
+every dispatch, write and reference read; omitted, any valid key in the bucket
+is allowed), the destination id it admits, the provider account and its billing.
+
+Darkroom guarantees that every key is validated as a path, a reference for
+another destination is refused, and a missing, empty or oversized reference (8
+MiB for images, 16 MiB for audio) is refused. These refusals, and a failed
+`authorize`, happen before any paid dispatch. Generation is priced from the
+validated settings. Output is saved with its content type, and a retry with the
+same request ID reuses the saved output instead of calling the provider again. A
+runnable Worker is in [`examples/standalone`](examples/standalone).
 
 ## Limits
 
@@ -488,9 +566,7 @@ through the same durable alarm as video: HTTP returns 202 until the retained MP3
 is ready, and the output has no embedded provenance. Hub public sharing does not
 cover audio. The MEDIA binding accepts `kind: "audio"` with `prompt`, `voiceId`
 or `durationSeconds`, and saves `<libraryPath>/prints-<requestId>.mp3`. The
-`/models` listing still carries pictures and video only, because the Agar and
-Prints catalog decoders have no audio kind yet; audio models are generated by
-id.
+`/models` listing includes audio models with `kind: "audio"`.
 
 Video models declare `video.audioReferences` (`{max, totalSeconds}`, or null).
 Only Seedance 2.5 sets it, at 10 clips and 30 seconds, from its Cloudflare input

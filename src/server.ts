@@ -14,10 +14,12 @@ export {
   type MediaBindingRequest,
 } from "./media-binding.js";
 import { Hono } from "hono";
+import { withBillingUnit } from "./model-catalog.js";
 import { z } from "zod";
 import { AppError, describeAppError } from "@fungi.computer/agar/errors";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
+import { mediaPathSchema } from "./media-path.js";
 import { runMediaGeneration } from "./media-generation.js";
 import { quoteMediaGeneration } from "./media-quote.js";
 import {
@@ -57,6 +59,11 @@ export {
   type MediaFailureStage,
   type MediaExecutionErrorOptions,
 } from "./execution-error.js";
+export {
+  readHostReference,
+  referenceFilename,
+  type HostReferenceSource,
+} from "./reference-read.js";
 export { mediaUnits, type MediaUnits } from "./gateway-models.js";
 export { quoteMediaGeneration, type MediaQuote } from "./media-quote.js";
 export type {
@@ -96,11 +103,7 @@ const identifier = z.lazy(() => z.string().min(1).max(256));
 /** Decode relative service generation input. Identity comes from the host. */
 export const mediaRequestSchema = z.strictObject({
   /** Fixed destination or reference file path. */
-  path: z
-    .string()
-    .min(1)
-    .max(1_024)
-    .refine((path) => !path.includes("\0")),
+  path: mediaPathSchema,
   /** Requested model, dimensions, prompt and references. */
   settings: mediaGenerationSettingsSchema,
   /** Optional verified image encoding pin. */
@@ -506,6 +509,7 @@ export function createMediaService(host: MediaServiceHost) {
   app.get("/models", () =>
     Response.json(
       (host.catalogue ?? listMediaModels())
+        .map(withBillingUnit)
         .map((model) =>
           host.destination.readReference !== undefined ||
           model.input.maxReferences === 0

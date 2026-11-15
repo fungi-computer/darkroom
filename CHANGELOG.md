@@ -1,5 +1,31 @@
 # @fungi.computer/darkroom
 
+## 0.10.0
+
+### Minor Changes
+
+- Changes since 0.9.2:
+
+  - fix(darkroom): keep the validation placeholder out of the catalog price
+    estimate
+  - fix(prints): hold stopped runs' places, migrate old rows safely, calmer
+    at-cap UI
+  - fix(prints): keep source-image operations out of the generator picker
+  - fix(darkroom): type the catalog price estimate test
+  - feat(prints): readable Stop, run captions, stale rows and limit copy
+  - feat(darkroom): add background removal and upscale as catalog operations
+  - fix(darkroom): keep the billing unit schema private
+  - feat(darkroom): expose each model's billing unit in the public model list
+  - fix(darkroom): keep the cloudflare entry free of the server bundle and
+    refresh api docs
+  - feat(darkroom): add an R2 media destination that reads references and saves
+    output
+
+### Patch Changes
+
+- Updated dependencies
+  - @fungi.computer/agar@0.17.0
+
 ## 0.9.2
 
 ### Patch Changes

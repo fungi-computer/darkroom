@@ -600,6 +600,94 @@ Dispatch to the native Workers AI binding.
 
 ---
 
+### MediaR2Bucket
+
+```ts
+type MediaR2Bucket = object;
+```
+
+The R2 bucket operations a Media destination needs; a native `R2Bucket`
+satisfies it.
+
+#### Methods
+
+##### get()
+
+```ts
+get(key): Promise<
+  | Readonly<{
+  size: number;
+}> & object
+| null>;
+```
+
+Read one object, or null when the key is absent.
+
+###### Parameters
+
+| Parameter | Type     |
+| --------- | -------- |
+| `key`     | `string` |
+
+###### Returns
+
+`Promise`\< \| `Readonly`\<\{ `size`: `number`; \}\> & `object` \| `null`\>
+
+##### put()
+
+```ts
+put(
+   key,
+   bytes,
+   options
+): Promise<object | null>;
+```
+
+Store exact bytes with their MIME type.
+
+###### Parameters
+
+| Parameter | Type                                                                              |
+| --------- | --------------------------------------------------------------------------------- |
+| `key`     | `string`                                                                          |
+| `bytes`   | `Uint8Array`                                                                      |
+| `options` | `Readonly`\<\{ `httpMetadata`: `Readonly`\<\{ `contentType`: `string`; \}\>; \}\> |
+
+###### Returns
+
+`Promise`\<`object` \| `null`\>
+
+---
+
+### R2MediaDestinationOptions
+
+```ts
+type R2MediaDestinationOptions = Readonly<{
+  bucket: MediaR2Bucket;
+  destinationId: string;
+  fit: ReferenceImageFitter;
+  authorize?: (key) => Promise<void> | void;
+}>;
+```
+
+Host-owned R2 destination configuration.
+
+---
+
+### R2MediaDestination
+
+```ts
+type R2MediaDestination = MediaServiceHost["destination"] &
+  Readonly<{
+    readReference: (reference, model) => Promise<MediaReferenceBytes>;
+    readAudioReference: (reference) => Promise<Uint8Array>;
+  }>;
+```
+
+The host destination over an R2 bucket, with both reference readers present.
+
+---
+
 ### MediaImagePort
 
 ```ts
@@ -705,6 +793,27 @@ AI Gateway route.
 #### Returns
 
 [`MediaProvider`](index.md#mediaprovider)
+
+---
+
+### createR2MediaDestination()
+
+```ts
+function createR2MediaDestination(options): R2MediaDestination;
+```
+
+A Media destination over one R2 bucket: object keys are the paths, validated
+with Darkroom's path schema. Never accepts URLs.
+
+#### Parameters
+
+| Parameter | Type                                                      |
+| --------- | --------------------------------------------------------- |
+| `options` | [`R2MediaDestinationOptions`](#r2mediadestinationoptions) |
+
+#### Returns
+
+[`R2MediaDestination`](#r2mediadestination)
 
 ---
 

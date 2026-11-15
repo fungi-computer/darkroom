@@ -202,9 +202,15 @@ describe("provider-owned model catalogue", () => {
         destination: { authorize: () => Promise.resolve(), write },
       } satisfies MediaServiceHost;
       const models = await createMediaService(host).request("/models");
-      expect(
-        (await models.json<{ id: string }[]>()).map(({ id }) => id),
-      ).toEqual([imageEntry.id, videoEntry.id]);
+      const listed = await models.json<{ id: string; billingUnit: string }[]>();
+      expect(listed.map(({ id }) => id)).toEqual([
+        imageEntry.id,
+        videoEntry.id,
+      ]);
+      expect(listed.map(({ billingUnit }) => billingUnit)).toEqual([
+        "image",
+        "video_second",
+      ]);
       await expect(
         generateMedia(host, {
           requestId: "custom-model",

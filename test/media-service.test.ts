@@ -38,8 +38,8 @@ const reference: MediaReferenceBytes = {
 };
 
 describe("retained Media model boundary", () => {
-  it("exposes eighteen immutable model definitions", () => {
-    expect(listMediaModels()).toHaveLength(18);
+  it("exposes twenty immutable model definitions", () => {
+    expect(listMediaModels()).toHaveLength(20);
     expect(listMediaModels().map(({ id }) => id)).toEqual([
       "@cf/black-forest-labs/flux-1-schnell",
       "@cf/black-forest-labs/flux-2-klein-4b",
@@ -49,6 +49,8 @@ describe("retained Media model boundary", () => {
       "@cf/leonardo/phoenix-1.0",
       "openai/gpt-image-2",
       "bytedance/seedream-5-pro",
+      "bria/remove-background",
+      "pruna/p-image-upscale",
       "bytedance/seedance-2.5",
       "bytedance/seedance-2.0",
       "bytedance/seedance-2.0-fast",
@@ -177,7 +179,8 @@ describe("retained Media model boundary", () => {
   it("builds each retained provider payload without inventing fields", () => {
     // Gateway models (fixed sizes) take gatewayInput; see gateway-models.test.
     for (const model of listMediaModels().filter(
-      ({ sizes, kind }) => sizes === null && kind === "image",
+      ({ sizes, kind, transform }) =>
+        sizes === null && kind === "image" && transform === null,
     )) {
       const settings = validateMediaGenerationSettings({
         ...base,

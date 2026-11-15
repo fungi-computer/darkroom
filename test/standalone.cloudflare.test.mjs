@@ -4,7 +4,7 @@ import {
   runInDurableObject,
   abortAllDurableObjects,
 } from "cloudflare:test";
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { listMediaModels } from "../dist/index.js";
 import { imageBytes } from "./standalone.worker.mjs";
 
@@ -52,7 +52,11 @@ it("retains native output across DO eviction and retries without another provide
   ).toBe(401);
   const catalog = await request("/models");
   expect(catalog.status).toBe(200);
-  expect(await catalog.json()).toHaveLength(listMediaModels().length);
+  const listed = await catalog.json();
+  expect(listed).toHaveLength(listMediaModels().length);
+  expect(listed.map((model) => model.billingUnit)).toEqual(
+    listMediaModels().map((model) => model.billingUnit),
+  );
   expect(
     (await request("/generate", { method: "POST", body: "{" })).status,
   ).toBe(400);
@@ -191,4 +195,104 @@ it("writes enriched bytes through the actual generation destination and reports 
   } finally {
     await env.PROOF.delete("provider-image");
   }
+});
+
+describe("R2 references and destination", () => {
+  const referenceModel = "@cf/black-forest-labs/flux-2-klein-4b";
+  const referenceKey = "references/greenhouse-ref.gif";
+  const marker = "R2-REFERENCE-MARKER";
+  const referenceBytes = Uint8Array.from([
+    ...imageBytes,
+    ...new globalThis.TextEncoder().encode(marker),
+  ]);
+  const withReference = (path, reference) => ({
+    path,
+    settings: {
+      model: referenceModel,
+      prompt: "greenhouse",
+      width: 1024,
+      height: 768,
+      references: [reference],
+    },
+  });
+  const stored = { computerId: "outputs", path: referenceKey };
+  const providerCalls = async () => {
+    const count = await env.PROOF.get("provider-count");
+    return count === null ? 0 : Number(await count.text());
+  };
+
+  it("sends a reference image stored in R2 to the provider", async () => {
+    await env.OUTPUTS.put(referenceKey, referenceBytes);
+    const before = await providerCalls();
+    const response = await generate(
+      withReference("with-reference.gif", stored),
+      "r2-reference-read",
+    );
+    expect(response.status).toBe(200);
+    expect(await providerCalls()).toBe(before + 1);
+    const sent = await (await env.PROOF.get("provider-input")).text();
+    expect(sent).toContain(marker);
+    expect(sent).toContain("greenhouse-ref.gif");
+  });
+
+  it("refuses a reference for another destination before dispatch", async () => {
+    await env.OUTPUTS.put(referenceKey, referenceBytes);
+    // Control: the same reference under the admitted destination id is accepted.
+    expect(
+      (await generate(withReference("control-b.gif", stored), "r2-control-b"))
+        .status,
+    ).toBe(200);
+    const before = await providerCalls();
+    const response = await generate(
+      withReference("wrong-destination.gif", {
+        ...stored,
+        computerId: "someone-else",
+      }),
+      "r2-reference-wrong-destination",
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ stage: "settings" });
+    expect(await providerCalls()).toBe(before);
+    expect(await env.OUTPUTS.get("wrong-destination.gif")).toBeNull();
+  });
+
+  it("refuses a missing or oversized reference before dispatch", async () => {
+    await env.OUTPUTS.put(referenceKey, referenceBytes);
+    // Control: a stored, in-limit reference is accepted by the same host.
+    expect(
+      (await generate(withReference("control-c.gif", stored), "r2-control-c"))
+        .status,
+    ).toBe(200);
+    await env.OUTPUTS.put(
+      "references/too-big.gif",
+      new Uint8Array(8 * 1024 * 1024 + 1),
+    );
+    const before = await providerCalls();
+    for (const [id, path] of [
+      ["r2-reference-missing", "references/absent.gif"],
+      ["r2-reference-oversized", "references/too-big.gif"],
+    ]) {
+      const response = await generate(
+        withReference(`${id}.gif`, { computerId: "outputs", path }),
+        id,
+      );
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ stage: "settings" });
+      expect(await providerCalls()).toBe(before);
+      expect(await env.OUTPUTS.get(`${id}.gif`)).toBeNull();
+    }
+  });
+
+  it("saves the output at the requested key and reuses it on retry", async () => {
+    await env.OUTPUTS.put(referenceKey, referenceBytes);
+    const input = withReference("results/from-reference.gif", stored);
+    const before = await providerCalls();
+    expect((await generate(input, "r2-output-retry")).status).toBe(200);
+    const object = await env.OUTPUTS.get("results/from-reference.gif");
+    expect(new Uint8Array(await object.arrayBuffer())).toEqual(imageBytes);
+    expect(object.httpMetadata.contentType).toBe("image/gif");
+    expect(await providerCalls()).toBe(before + 1);
+    expect((await generate(input, "r2-output-retry")).status).toBe(200);
+    expect(await providerCalls()).toBe(before + 1);
+  });
 });

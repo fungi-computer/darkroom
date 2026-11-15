@@ -3,6 +3,7 @@ import {
   getMediaModel,
   mediaModels,
   MediaSettingsError,
+  transformMilliunits,
   type MediaCatalogue,
 } from "./model-catalog.js";
 import {
@@ -13,7 +14,12 @@ import {
   type MediaGenerationSettings,
   type MediaReferenceBytes,
 } from "./index.js";
-import type { MediaAudioModelId, MediaVideoModelId } from "./model-catalog.js";
+import type {
+  MediaAudioModelId,
+  MediaBillingUnit,
+  MediaVideoModelId,
+} from "./model-catalog.js";
+import { mediaBillingUnit } from "./model-catalog.js";
 import { AUDIO_CHARACTER_BLOCK } from "./model-catalog.js";
 import {
   buildElevenLabsInput,
@@ -29,23 +35,26 @@ import {
 export type GatewayModelId =
   | "openai/gpt-image-2"
   | "bytedance/seedream-5-pro"
+  | "bria/remove-background"
+  | "pruna/p-image-upscale"
   | MediaVideoModelId
   | MediaAudioModelId;
 export const isGatewayModel = (id: string): id is GatewayModelId => {
-  if (id === "openai/gpt-image-2" || id === "bytedance/seedream-5-pro")
+  if (
+    id === "openai/gpt-image-2" ||
+    id === "bytedance/seedream-5-pro" ||
+    id === "bria/remove-background" ||
+    id === "pruna/p-image-upscale"
+  )
     return true;
   const kind = getGatewayModel(id)?.kind;
   return kind === "video" || kind === "audio";
 };
 
-/**
- * What one generation bills: whole images, seconds of video or music, or
- * blocks of {@link AUDIO_CHARACTER_BLOCK} speech characters (so a per-character
- * provider rate is marked up once per block, not rounded up per character).
- */
+/** What one generation bills, in the unit its catalog entry names. */
 export type MediaUnits = Readonly<{
-  /** One image, one whole video or music second, or one speech character block. */
-  unit: "image" | "video_second" | "audio_second" | "audio_character_block";
+  /** The model's `billingUnit`. */
+  unit: MediaBillingUnit;
   /** Number of delivered or admitted units. */
   units: number;
 }>;
@@ -64,24 +73,21 @@ export function mediaUnits(
   const model = getMediaModel(settings.model, catalogue);
   if (model === undefined)
     throw new MediaSettingsError("billing units require a known Media model");
-  if (model.kind === "video") {
-    const checked = revalidate(settings, catalogue);
-    if (checked.durationSeconds === undefined)
-      throw new MediaSettingsError("video settings need a duration");
-    return { unit: "video_second", units: checked.durationSeconds };
-  }
-  if (model.kind === "audio") {
-    const checked = revalidate(settings, catalogue);
-    if (model.audio?.mode === "speech")
-      return {
-        unit: "audio_character_block",
-        units: Math.ceil(checked.prompt.length / AUDIO_CHARACTER_BLOCK),
-      };
-    if (checked.durationSeconds === undefined)
-      throw new MediaSettingsError("music settings need a length");
-    return { unit: "audio_second", units: checked.durationSeconds };
-  }
-  return { unit: "image", units: 1 };
+  const unit = mediaBillingUnit(model);
+  if (unit === "image") return { unit, units: 1 };
+  const checked = revalidate(settings, catalogue);
+  if (unit === "audio_character_block")
+    return {
+      unit,
+      units: Math.ceil(checked.prompt.length / AUDIO_CHARACTER_BLOCK),
+    };
+  if (checked.durationSeconds === undefined)
+    throw new MediaSettingsError(
+      unit === "video_second"
+        ? "video settings need a duration"
+        : "music settings need a length",
+    );
+  return { unit, units: checked.durationSeconds };
 }
 
 /**
@@ -172,6 +178,18 @@ export function estimateGatewayMilliunits(
   // https://developers.cloudflare.com/ai/models/bytedance/seedream-5-pro/
   if (settings.model === "bytedance/seedream-5-pro") return 4_500;
   const model = getGatewayModel(settings.model);
+  if (model?.transform != null) {
+    // Published per-image prices, held in the catalog's transform facts.
+    const price = transformMilliunits(
+      model.transform,
+      settings.targetMegapixels,
+    );
+    if (price === undefined)
+      throw new MediaSettingsError(
+        `${model.id} has no price for this output size`,
+      );
+    return price;
+  }
   if (model?.kind === "video") return estimateVideoMilliunits(settings);
   if (model?.kind === "audio")
     return estimateElevenLabsMilliunits(revalidate(settings), model);
@@ -222,6 +240,35 @@ export function gatewayInput(
       prompt: settings.prompt,
       size: sizeOf(settings),
       watermark: false,
+    };
+  }
+  if (
+    settings.model === "bria/remove-background" ||
+    settings.model === "pruna/p-image-upscale"
+  ) {
+    const [source, ...extra] = references;
+    if (source === undefined || extra.length > 0)
+      throw new MediaSettingsError(`${settings.model} takes one source image`);
+    if (source.format !== "png" && source.format !== "jpeg")
+      throw new MediaSettingsError(
+        `${settings.model} accepts png or jpeg source images`,
+      );
+    // Always the bytes as a data URI, never a URL to our storage.
+    // https://developers.cloudflare.com/ai/models/bria/remove-background/
+    const image = imageDataUri(source);
+    if (settings.model === "bria/remove-background")
+      return { image, preserve_alpha: true };
+    // Every field is marked required on the model page; the values are its
+    // defaults except the output encoding (see the catalog entry).
+    // https://developers.cloudflare.com/ai/models/pruna/p-image-upscale/
+    return {
+      image,
+      target: settings.targetMegapixels ?? 4,
+      output_format: "webp",
+      output_quality: 90,
+      enhance_details: false,
+      enhance_realism: false,
+      disable_safety_checker: false,
     };
   }
   const checked = revalidate(settings);
