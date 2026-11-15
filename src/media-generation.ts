@@ -60,6 +60,7 @@ export function runMediaGeneration(
     const execution: Omit<MediaExecution, "signal"> & {
       signal?: AbortSignal;
     } = {
+      embedPrompt: request.embedPrompt,
       operation: host.operations.getByName(`media:${request.requestId}`),
       actorUserId: host.scope.actorId,
       coordinates: {
@@ -78,6 +79,7 @@ export function runMediaGeneration(
       destination: {
         authorize: () => host.destination.authorize(path),
         write: (bytes) => host.destination.write(path, bytes),
+        remove: (sha256) => host.destination.remove(path, { sha256 }),
       },
       generation: {
         prepare: async () => {

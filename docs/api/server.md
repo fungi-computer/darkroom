@@ -334,23 +334,31 @@ Check host namespace, request identity and inactivity before erasure.
 ##### erase()
 
 ```ts
-erase(namespace, requestId): Promise<Readonly<{
-  clear: boolean;
-}>>;
+erase(
+   namespace,
+   requestId,
+   policy?
+): Promise<MediaErasure>;
 ```
 
-Erase inactive output and local storage, then retain the durable erasure marker.
+Erase the operation and everything it retained or could still write, even
+mid-generation. Erasure is marked first, so an attempt still running, or a lease
+recovered later, can neither transition nor leave output behind: a write that
+lands after the mark is deleted. The marker is never removed, so a crash cannot
+resurrect the operation. Safe to repeat until `clear`; a repeat after a partial
+failure resumes the cleanup.
 
 ###### Parameters
 
-| Parameter   | Type     |
-| ----------- | -------- |
-| `namespace` | `string` |
-| `requestId` | `string` |
+| Parameter   | Type                                    | Default value    |
+| ----------- | --------------------------------------- | ---------------- |
+| `namespace` | `string`                                | `undefined`      |
+| `requestId` | `string`                                | `undefined`      |
+| `policy`    | [`MediaErasePolicy`](#mediaerasepolicy) | `"abort-active"` |
 
 ###### Returns
 
-`Promise`\<`Readonly`\<\{ `clear`: `boolean`; \}\>\>
+`Promise`\<[`MediaErasure`](#mediaerasure)\>
 
 ##### readErasure()
 
@@ -365,6 +373,76 @@ Read back empty SQL, alarm and retained output with the durable erasure marker.
 ###### Returns
 
 `Promise`\<`Readonly`\<\{ `clear`: `boolean`; \}\>\>
+
+##### retained()
+
+```ts
+retained(namespace, requestId): Promise<
+  | Readonly<{
+  requestId: string;
+  state:   | "admitted"
+     | "estimating"
+     | "generating"
+     | "writing"
+     | "charging"
+     | "written"
+     | "succeeded"
+     | "interrupted";
+  destinationPath: string;
+  output:   | Readonly<{
+     bytes: number;
+     format: string;
+     contentType: string;
+   }>
+     | null;
+}>
+| null>;
+```
+
+List what this operation retains: its destination path and exact provider
+output. Null once erased.
+
+###### Parameters
+
+| Parameter   | Type     |
+| ----------- | -------- |
+| `namespace` | `string` |
+| `requestId` | `string` |
+
+###### Returns
+
+`Promise`\< \| `Readonly`\<\{ `requestId`: `string`; `state`: \| `"admitted"` \|
+`"estimating"` \| `"generating"` \| `"writing"` \| `"charging"` \| `"written"`
+\| `"succeeded"` \| `"interrupted"`; `destinationPath`: `string`; `output`: \|
+`Readonly`\<\{ `bytes`: `number`; `format`: `string`; `contentType`: `string`;
+\}\> \| `null`; \}\> \| `null`\>
+
+##### readRetained()
+
+```ts
+readRetained(namespace, requestId): Promise<
+  | Readonly<{
+  bytes: Uint8Array;
+  format: string;
+}>
+| null>;
+```
+
+Read back the exact retained provider bytes, before any provenance, so a host
+can re-save a result whose destination write was lost. Null when erased or
+nothing was retained.
+
+###### Parameters
+
+| Parameter   | Type     |
+| ----------- | -------- |
+| `namespace` | `string` |
+| `requestId` | `string` |
+
+###### Returns
+
+`Promise`\< \| `Readonly`\<\{ `bytes`: `Uint8Array`; `format`: `string`; \}\> \|
+`null`\>
 
 ##### admit()
 
@@ -641,6 +719,28 @@ A fixed-path exact-byte save is safe to retry without repeating generation.
 | Parameter | Type     |
 | --------- | -------- |
 | `leaseId` | `string` |
+
+###### Returns
+
+[`MediaOperationProjection`](#mediaoperationprojection)
+
+##### recordWriteIntent()
+
+```ts
+recordWriteIntent(leaseId, sha256): MediaOperationProjection;
+```
+
+Record the digest of the exact bytes about to be written to the destination,
+before writing them. An erasure then knows which file this operation owns, even
+if the process dies between the write and its record, and refuses the write once
+erased.
+
+###### Parameters
+
+| Parameter | Type     |
+| --------- | -------- |
+| `leaseId` | `string` |
+| `sha256`  | `string` |
 
 ###### Returns
 
@@ -1034,6 +1134,10 @@ type MediaOperation = {
       | "recordWrittenWithoutSettlement"
       | "releaseEstimate"
       | "releaseWrite"
+      | "recordWriteIntent"
+      | "retained"
+      | "readRetained"
+      | "erase"
   ]: (
     input: Parameters<MediaOperationOwner[Method]>,
   ) =>
@@ -1173,6 +1277,63 @@ Evidence that retained output, SQL and alarms were erased.
 
 ---
 
+### MediaErasePolicy
+
+```ts
+type MediaErasePolicy = "abort-active" | "refuse-active";
+```
+
+How `erase` treats an operation that is still generating or saving.
+
+---
+
+### MediaErasure
+
+```ts
+type MediaErasure = MediaErasureReadback &
+  Readonly<{
+    destinationPath: string | null;
+    writtenSha256: string | null;
+    abandonedGeneration: boolean;
+  }>;
+```
+
+Result of erasing one operation: readback plus what the host may still own.
+
+---
+
+### MediaRetainedBytes
+
+```ts
+type MediaRetainedBytes = Readonly<{
+  bytes: Uint8Array;
+  format: string;
+}>;
+```
+
+Exact provider bytes an operation retained, before any provenance.
+
+---
+
+### MediaRetained
+
+```ts
+type MediaRetained = Readonly<{
+  requestId: string;
+  state: MediaOperationState;
+  destinationPath: string;
+  output: Readonly<{
+    bytes: number;
+    format: string;
+    contentType: string;
+  }> | null;
+}>;
+```
+
+What one operation still retains, readable by operation id.
+
+---
+
 ### MediaRetentionResult
 
 ```ts
@@ -1210,6 +1371,21 @@ type MediaOperationEnvironment = Readonly<{
 ```
 
 Retained-output storage supplied by the host.
+
+---
+
+### MediaErasureMarker
+
+```ts
+type MediaErasureMarker = Readonly<{
+  destinationPath: string | null;
+  writtenSha256: string | null;
+  abandonedGeneration: boolean;
+}>;
+```
+
+Facts an erased operation keeps: its destination file, and whether a billing
+hold may be open.
 
 ---
 
@@ -1293,14 +1469,41 @@ Read the durable erasure marker.
 ##### markErased()
 
 ```ts
-markErased(): Promise<void>;
+markErased(marker): Promise<void>;
 ```
 
-Persist the durable erasure marker.
+Persist the durable erasure marker with the facts the host needs after erasure.
+Never removed: nothing may delete it.
+
+###### Parameters
+
+| Parameter | Type                                        |
+| --------- | ------------------------------------------- |
+| `marker`  | [`MediaErasureMarker`](#mediaerasuremarker) |
 
 ###### Returns
 
 `Promise`\<`void`\>
+
+##### readErasureMarker()
+
+```ts
+readErasureMarker(): Promise<
+  | Readonly<{
+  destinationPath: string | null;
+  writtenSha256: string | null;
+  abandonedGeneration: boolean;
+}>
+| null>;
+```
+
+Read the facts kept with the marker, or null for a marker without them.
+
+###### Returns
+
+`Promise`\< \| `Readonly`\<\{ `destinationPath`: `string` \| `null`;
+`writtenSha256`: `string` \| `null`; `abandonedGeneration`: `boolean`; \}\> \|
+`null`\>
 
 ##### listKeys()
 
@@ -1326,13 +1529,19 @@ Remove any scheduled background alarm.
 
 `Promise`\<`void`\>
 
-##### deleteAll()
+##### deleteKeys()
 
 ```ts
-deleteAll(): Promise<void>;
+deleteKeys(keys): Promise<void>;
 ```
 
-Remove local SQL and key-value storage.
+Remove the named key-value entries.
+
+###### Parameters
+
+| Parameter | Type                |
+| --------- | ------------------- |
+| `keys`    | readonly `string`[] |
 
 ###### Returns
 
@@ -1581,6 +1790,16 @@ The provider cost of one exact generation request, before any billing policy.
 
 ---
 
+### MediaRemoval
+
+```ts
+type MediaRemoval = "removed" | "absent" | "not-ours" | "kept";
+```
+
+What a destination did when asked to delete a file this operation wrote.
+
+---
+
 ### HostReferenceSource
 
 ```ts
@@ -1633,9 +1852,11 @@ type MediaServiceHost = Readonly<{
   destination: Readonly<{
      authorize: (path) => Promise<void>;
      write: (path, bytes) => Promise<void>;
+     remove: (path, written) => Promise<MediaRemoval>;
      readReference?: (reference, model) => Promise<MediaReferenceBytes>;
      readAudioReference?: (reference) => Promise<Uint8Array>;
   }>;
+  embedPrompt?: boolean;
   onFailure?: (error) => Response | undefined;
 }> &
   | Readonly<{
@@ -1668,6 +1889,7 @@ type MediaGenerationRequest = Readonly<{
   path: string;
   settings: Parameters<typeof validateMediaGenerationSettings>[0];
   outputFormat?: z.output<typeof mediaRequestSchema>["outputFormat"];
+  embedPrompt?: boolean;
 }>;
 ```
 
@@ -1707,6 +1929,19 @@ type MediaGenerationOutcome =
 
 The typed result of one generation, shared by the Hono route and the Agent path.
 
+---
+
+### MediaOperationErasure
+
+```ts
+type MediaOperationErasure = MediaErasure &
+  Readonly<{
+    destinationFile: MediaRemoval | null;
+  }>;
+```
+
+Erasure of one generation, with what happened to its destination file.
+
 ## Variables
 
 ### mediaImageBindingInputSchema
@@ -1719,6 +1954,7 @@ const mediaImageBindingInputSchema: ZodObject<{
   settings: ZodObject<{
      model: ZodString;
      prompt: ZodString;
+     guidance: ZodOptional<ZodNumber>;
      targetMegapixels: ZodOptional<ZodNumber>;
      resolution: ZodOptional<ZodEnum<{
         p480: "480p";
@@ -1823,6 +2059,7 @@ const mediaBindingGenerationSchema: ZodDiscriminatedUnion<[ZodObject<{
   settings: ZodObject<{
      model: ZodString;
      prompt: ZodString;
+     guidance: ZodOptional<ZodNumber>;
      targetMegapixels: ZodOptional<ZodNumber>;
      resolution: ZodOptional<ZodEnum<{
         p480: "480p";
@@ -1928,6 +2165,7 @@ const mediaBindingCallSchema: ZodDiscriminatedUnion<[ZodObject<{
      settings: ZodObject<{
         model: ZodString;
         prompt: ZodString;
+        guidance: ZodOptional<...>;
         targetMegapixels: ZodOptional<...>;
         resolution: ZodOptional<...>;
         aspectRatio: ZodOptional<...>;
@@ -2129,6 +2367,7 @@ const mediaRequestSchema: ZodObject<{
      width: ZodOptional<ZodNumber>;
      height: ZodOptional<ZodNumber>;
      steps: ZodOptional<ZodNumber>;
+     guidance: ZodOptional<ZodNumber>;
      durationSeconds: ZodOptional<ZodNumber>;
      targetMegapixels: ZodOptional<ZodNumber>;
      voiceId: ZodOptional<ZodString>;
@@ -2201,6 +2440,7 @@ Quote the catalog defaults through the exact estimator used before dispatch.
 | `settings.width?`            | `number`                                                                                                                              | Requested image width or nominal video resolution/aspect selector; absent for audio.  |
 | `settings.height?`           | `number`                                                                                                                              | Requested image height or nominal video resolution/aspect selector; absent for audio. |
 | `settings.steps?`            | `number`                                                                                                                              | Model-specific inference steps.                                                       |
+| `settings.guidance?`         | `number`                                                                                                                              | Prompt guidance for models that take it; the catalog default when omitted.            |
 | `settings.durationSeconds?`  | `number`                                                                                                                              | Video and music models only: output length in whole seconds.                          |
 | `settings.targetMegapixels?` | `number`                                                                                                                              | Upscale only: the output size in megapixels.                                          |
 | `settings.voiceId?`          | `string`                                                                                                                              | Speech models only: the catalog voice that reads the prompt.                          |
@@ -2275,6 +2515,7 @@ function parseMediaBindingCall(raw):
                   settings: {
                     model: string;
                     prompt: string;
+                    guidance?: number;
                     targetMegapixels?: number;
                     resolution?: "480p" | "720p" | "768p" | "1080p" | "4k";
                     aspectRatio?:
@@ -2345,10 +2586,10 @@ Parsing and model refusal stay shared; authorization remains host-owned.
 \| `Readonly`\<\{ `kind`: `"parsed"`; `call`: \| \{ `operation`: `"models"`;
 `input`: `Record`\<`string`, `never`\>; \} \| \{ `operation`: `"generate"`;
 `input`: \| \{ `kind`: `"image"`; `requestId`: `string`; `libraryPath`:
-`string`; `settings`: \{ `model`: `string`; `prompt`: `string`;
-`targetMegapixels?`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"`
-\| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \|
-`"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`;
+`string`; `settings`: \{ `model`: `string`; `prompt`: `string`; `guidance?`:
+`number`; `targetMegapixels?`: `number`; `resolution?`: `"480p"` \| `"720p"` \|
+`"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"`
+\| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`;
 `references?`: `object`[]; `width`: `number`; `height`: `number`; `steps?`:
 `number`; \}; `outputFormat?`: `"png"` \| `"jpeg"` \| `"webp"`; \} \| \{ `kind`:
 `"video"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{
@@ -2377,10 +2618,10 @@ Choose the same fixed filename on both hosts without a recursive App lookup.
 
 #### Parameters
 
-| Parameter    | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `input`      | \| \{ `kind`: `"image"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: `string`; `prompt`: `string`; `targetMegapixels?`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; `width`: `number`; `height`: `number`; `steps?`: `number`; \}; `outputFormat?`: `"png"` \| `"jpeg"` \| `"webp"`; \} \| \{ `kind`: `"video"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: \| `"bytedance/seedance-2.5"` \| `"bytedance/seedance-2.0"` \| `"bytedance/seedance-2.0-fast"` \| `"bytedance/seedance-2.0-mini"` \| `"google/veo-3.1"` \| `"google/veo-3.1-fast"` \| `"minimax/h3-max"`; `prompt`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `durationSeconds?`: `number`; `generateAudio?`: `boolean`; `references?`: `object`[]; `audioReferences?`: `object`[]; \}; \} \| \{ `kind`: `"audio"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: \| `"elevenlabs/eleven-multilingual-v2"` \| `"elevenlabs/eleven-v3"` \| `"elevenlabs/music-v2"`; `prompt`: `string`; `voiceId?`: `string`; `durationSeconds?`: `number`; \}; \} |
-| `computerId` | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Parameter    | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `input`      | \| \{ `kind`: `"image"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: `string`; `prompt`: `string`; `guidance?`: `number`; `targetMegapixels?`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; `width`: `number`; `height`: `number`; `steps?`: `number`; \}; `outputFormat?`: `"png"` \| `"jpeg"` \| `"webp"`; \} \| \{ `kind`: `"video"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: \| `"bytedance/seedance-2.5"` \| `"bytedance/seedance-2.0"` \| `"bytedance/seedance-2.0-fast"` \| `"bytedance/seedance-2.0-mini"` \| `"google/veo-3.1"` \| `"google/veo-3.1-fast"` \| `"minimax/h3-max"`; `prompt`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `durationSeconds?`: `number`; `generateAudio?`: `boolean`; `references?`: `object`[]; `audioReferences?`: `object`[]; \}; \} \| \{ `kind`: `"audio"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: \| `"elevenlabs/eleven-multilingual-v2"` \| `"elevenlabs/eleven-v3"` \| `"elevenlabs/music-v2"`; `prompt`: `string`; `voiceId?`: `string`; `durationSeconds?`: `number`; \}; \} |
+| `computerId` | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 #### Returns
 
@@ -2398,11 +2639,11 @@ Decode bounded service replies once for both MEDIA host bindings.
 
 #### Parameters
 
-| Parameter    | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `input`      | \| \{ `operation`: `"models"`; `input`: `Record`\<`string`, `never`\>; \} \| \{ `operation`: `"generate"`; `input`: \| \{ `kind`: `"image"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: `string`; `prompt`: `string`; `targetMegapixels?`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; `width`: `number`; `height`: `number`; `steps?`: `number`; \}; `outputFormat?`: `"png"` \| `"jpeg"` \| `"webp"`; \} \| \{ `kind`: `"video"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: \| `"bytedance/seedance-2.5"` \| `"bytedance/seedance-2.0"` \| `"bytedance/seedance-2.0-fast"` \| `"bytedance/seedance-2.0-mini"` \| `"google/veo-3.1"` \| `"google/veo-3.1-fast"` \| `"minimax/h3-max"`; `prompt`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `durationSeconds?`: `number`; `generateAudio?`: `boolean`; `references?`: `object`[]; `audioReferences?`: `object`[]; \}; \} \| \{ `kind`: `"audio"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: \| `"elevenlabs/eleven-multilingual-v2"` \| `"elevenlabs/eleven-v3"` \| `"elevenlabs/music-v2"`; `prompt`: `string`; `voiceId?`: `string`; `durationSeconds?`: `number`; \}; \}; \} |
-| `computerId` | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `response`   | `Response`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Parameter    | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `input`      | \| \{ `operation`: `"models"`; `input`: `Record`\<`string`, `never`\>; \} \| \{ `operation`: `"generate"`; `input`: \| \{ `kind`: `"image"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: `string`; `prompt`: `string`; `guidance?`: `number`; `targetMegapixels?`: `number`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; `width`: `number`; `height`: `number`; `steps?`: `number`; \}; `outputFormat?`: `"png"` \| `"jpeg"` \| `"webp"`; \} \| \{ `kind`: `"video"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: \| `"bytedance/seedance-2.5"` \| `"bytedance/seedance-2.0"` \| `"bytedance/seedance-2.0-fast"` \| `"bytedance/seedance-2.0-mini"` \| `"google/veo-3.1"` \| `"google/veo-3.1-fast"` \| `"minimax/h3-max"`; `prompt`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `durationSeconds?`: `number`; `generateAudio?`: `boolean`; `references?`: `object`[]; `audioReferences?`: `object`[]; \}; \} \| \{ `kind`: `"audio"`; `requestId`: `string`; `libraryPath`: `string`; `settings`: \{ `model`: \| `"elevenlabs/eleven-multilingual-v2"` \| `"elevenlabs/eleven-v3"` \| `"elevenlabs/music-v2"`; `prompt`: `string`; `voiceId?`: `string`; `durationSeconds?`: `number`; \}; \}; \} |
+| `computerId` | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `response`   | `Response`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 #### Returns
 
@@ -2434,29 +2675,72 @@ way its metering does, so the number matches the charge.
 
 #### Parameters
 
-| Parameter               | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Description                                                                                 |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `raw`                   | \{ `model`: `string`; `prompt`: `string`; `width?`: `number`; `height?`: `number`; `steps?`: `number`; `durationSeconds?`: `number`; `targetMegapixels?`: `number`; `voiceId?`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; `audioReferences?`: `object`[]; \} | -                                                                                           |
-| `raw.model`             | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Provider catalog model identifier.                                                          |
-| `raw.prompt`            | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Generation prompt; each model's `maxPromptLength` is enforced on top of this ceiling.       |
-| `raw.width?`            | `number`                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Requested image width or nominal video selector; absent for audio.                          |
-| `raw.height?`           | `number`                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Requested image height or nominal video selector; absent for audio.                         |
-| `raw.steps?`            | `number`                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Model-specific inference step count.                                                        |
-| `raw.durationSeconds?`  | `number`                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Requested video or music length in whole seconds.                                           |
-| `raw.targetMegapixels?` | `number`                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Upscale only: the output size in megapixels, one of the model's offered sizes.              |
-| `raw.voiceId?`          | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Speech models only: a premade voice from the catalog; the default when omitted.             |
-| `raw.resolution?`       | `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`                                                                                                                                                                                                                                                                                                                                                                                                     | Video resolution; must match the nominal width/height selector.                             |
-| `raw.aspectRatio?`      | `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`                                                                                                                                                                                                                                                                                                                                                                               | Video aspect; must match the nominal width/height selector.                                 |
-| `raw.generateAudio?`    | `boolean`                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Video audio selection.                                                                      |
-| `raw.references?`       | `object`[]                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Host-authorized reference images.                                                           |
-| `raw.audioReferences?`  | `object`[]                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Host-authorized reference audio clips; only a model declaring `audioReferences` takes them. |
-| `references`            | [`MediaReferenceReader`](index.md#mediareferencereader)                                                                                                                                                                                                                                                                                                                                                                                                     | -                                                                                           |
+| Parameter               | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Description                                                                                 |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `raw`                   | \{ `model`: `string`; `prompt`: `string`; `width?`: `number`; `height?`: `number`; `steps?`: `number`; `guidance?`: `number`; `durationSeconds?`: `number`; `targetMegapixels?`: `number`; `voiceId?`: `string`; `resolution?`: `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`; `aspectRatio?`: `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`; `generateAudio?`: `boolean`; `references?`: `object`[]; `audioReferences?`: `object`[]; \} | -                                                                                           |
+| `raw.model`             | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Provider catalog model identifier.                                                          |
+| `raw.prompt`            | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Generation prompt; each model's `maxPromptLength` is enforced on top of this ceiling.       |
+| `raw.width?`            | `number`                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Requested image width or nominal video selector; absent for audio.                          |
+| `raw.height?`           | `number`                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Requested image height or nominal video selector; absent for audio.                         |
+| `raw.steps?`            | `number`                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Model-specific inference step count.                                                        |
+| `raw.guidance?`         | `number`                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Prompt guidance; models without a catalog guidance range refuse it.                         |
+| `raw.durationSeconds?`  | `number`                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Requested video or music length in whole seconds.                                           |
+| `raw.targetMegapixels?` | `number`                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Upscale only: the output size in megapixels, one of the model's offered sizes.              |
+| `raw.voiceId?`          | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Speech models only: a premade voice from the catalog; the default when omitted.             |
+| `raw.resolution?`       | `"480p"` \| `"720p"` \| `"768p"` \| `"1080p"` \| `"4k"`                                                                                                                                                                                                                                                                                                                                                                                                                            | Video resolution; must match the nominal width/height selector.                             |
+| `raw.aspectRatio?`      | `"16:9"` \| `"4:3"` \| `"1:1"` \| `"3:4"` \| `"9:16"` \| `"21:9"` \| `"9:21"`                                                                                                                                                                                                                                                                                                                                                                                                      | Video aspect; must match the nominal width/height selector.                                 |
+| `raw.generateAudio?`    | `boolean`                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Video audio selection.                                                                      |
+| `raw.references?`       | `object`[]                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Host-authorized reference images.                                                           |
+| `raw.audioReferences?`  | `object`[]                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Host-authorized reference audio clips; only a model declaring `audioReferences` takes them. |
+| `references`            | [`MediaReferenceReader`](index.md#mediareferencereader)                                                                                                                                                                                                                                                                                                                                                                                                                            | -                                                                                           |
 
 #### Returns
 
 `Promise`\<`Readonly`\<`Readonly`\<\{ `unit`: `"image"` \| `"video_second"` \|
 `"audio_second"` \| `"audio_character_block"`; `units`: `number`; \}\> &
 `object`\>\>
+
+---
+
+### mediaWrittenDigest()
+
+```ts
+function mediaWrittenDigest(bytes): Promise<string>;
+```
+
+Lowercase hex SHA-256 of the exact bytes written to a destination.
+
+#### Parameters
+
+| Parameter | Type         |
+| --------- | ------------ |
+| `bytes`   | `Uint8Array` |
+
+#### Returns
+
+`Promise`\<`string`\>
+
+---
+
+### removeMediaIfWritten()
+
+```ts
+function removeMediaIfWritten(file, sha256): Promise<MediaRemoval>;
+```
+
+Delete the file at a destination path only while it still holds the exact bytes
+the operation wrote, so a path reused for something else is never lost.
+
+#### Parameters
+
+| Parameter | Type                                                                                                        |
+| --------- | ----------------------------------------------------------------------------------------------------------- |
+| `file`    | `Readonly`\<\{ `read`: () => `Promise`\<`Uint8Array` \| `null`\>; `delete`: () => `Promise`\<`void`\>; \}\> |
+| `sha256`  | `string`                                                                                                    |
+
+#### Returns
+
+`Promise`\<[`MediaRemoval`](#mediaremoval)\>
 
 ---
 
@@ -2523,6 +2807,109 @@ failures.
 #### Returns
 
 `Promise`\<[`MediaGenerationOutcome`](#mediagenerationoutcome)\>
+
+---
+
+### retainedMedia()
+
+```ts
+function retainedMedia(
+  host,
+  requestId,
+): Promise<Readonly<{
+  requestId: string;
+  state:
+    | "admitted"
+    | "estimating"
+    | "generating"
+    | "writing"
+    | "charging"
+    | "written"
+    | "succeeded"
+    | "interrupted";
+  destinationPath: string;
+  output: Readonly<{
+    bytes: number;
+    format: string;
+    contentType: string;
+  }> | null;
+}> | null>;
+```
+
+What one generation still retains, by its request id: where its file goes, and
+the exact provider bytes held for recovery, including bytes a crash left
+unrecorded. Null once erased. Refuses another namespace.
+
+#### Parameters
+
+| Parameter   | Type                                                                           |
+| ----------- | ------------------------------------------------------------------------------ |
+| `host`      | `Pick`\<[`MediaServiceHost`](#mediaservicehost), `"operations"` \| `"scope"`\> |
+| `requestId` | `string`                                                                       |
+
+#### Returns
+
+`Promise`\< \| `Readonly`\<\{ `requestId`: `string`; `state`: \| `"admitted"` \|
+`"estimating"` \| `"generating"` \| `"writing"` \| `"charging"` \| `"written"`
+\| `"succeeded"` \| `"interrupted"`; `destinationPath`: `string`; `output`: \|
+`Readonly`\<\{ `bytes`: `number`; `format`: `string`; `contentType`: `string`;
+\}\> \| `null`; \}\> \| `null`\>
+
+---
+
+### readRetainedMedia()
+
+```ts
+function readRetainedMedia(
+  host,
+  requestId,
+): Promise<Readonly<{
+  bytes: Uint8Array;
+  format: string;
+}> | null>;
+```
+
+Read back the exact provider bytes a generation retained, before any provenance,
+so a host can re-save a result whose destination write was lost. Null when
+erased or nothing was retained. Refuses another namespace.
+
+#### Parameters
+
+| Parameter   | Type                                                                           |
+| ----------- | ------------------------------------------------------------------------------ |
+| `host`      | `Pick`\<[`MediaServiceHost`](#mediaservicehost), `"operations"` \| `"scope"`\> |
+| `requestId` | `string`                                                                       |
+
+#### Returns
+
+`Promise`\< \| `Readonly`\<\{ `bytes`: `Uint8Array`; `format`: `string`; \}\> \|
+`null`\>
+
+---
+
+### eraseMediaOperation()
+
+```ts
+function eraseMediaOperation(host, requestId): Promise<MediaOperationErasure>;
+```
+
+Erase everything a generation retained or could still write: its retained
+output, reference copies, storage and the destination file (only while it still
+holds what this operation wrote). Works mid generation: the operation refuses
+later writes, deletes anything that lands, and its open billing hold is settled
+at zero units. Call again until `clear` is true; the destination facts are kept
+for that retry.
+
+#### Parameters
+
+| Parameter   | Type                                                                                                              |
+| ----------- | ----------------------------------------------------------------------------------------------------------------- |
+| `host`      | `Pick`\<[`MediaServiceHost`](#mediaservicehost), `"operations"` \| `"scope"` \| `"destination"` \| `"metering"`\> |
+| `requestId` | `string`                                                                                                          |
+
+#### Returns
+
+`Promise`\<[`MediaOperationErasure`](#mediaoperationerasure)\>
 
 ---
 

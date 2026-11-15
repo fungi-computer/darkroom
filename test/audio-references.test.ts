@@ -236,6 +236,7 @@ describe("reference audio through the MEDIA binding and catalog", () => {
       const listed = async (readable: boolean) => {
         const destination = {
           authorize: () => Promise.resolve(),
+          remove: () => Promise.resolve("absent" as const),
           write: () => Promise.resolve(),
           readReference: () => Promise.reject(new Error("unused")),
         };
@@ -326,6 +327,7 @@ describe("reference audio through the durable background service", () => {
         metering: "unmetered",
         destination: {
           authorize: () => Promise.resolve(),
+          remove: () => Promise.resolve("absent" as const),
           write: () => Promise.resolve(),
           readAudioReference: reads,
         },
@@ -393,6 +395,7 @@ describe("reference audio through the durable background service", () => {
         },
         destination: {
           authorize: () => Promise.resolve(),
+          remove: () => Promise.resolve("absent" as const),
           write: () => Promise.resolve(),
           readAudioReference: () => Promise.resolve(wav(31)),
         },

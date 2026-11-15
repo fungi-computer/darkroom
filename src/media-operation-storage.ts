@@ -1,3 +1,13 @@
+/** Facts an erased operation keeps: its destination file, and whether a billing hold may be open. */
+export type MediaErasureMarker = Readonly<{
+  /** The destination path the operation wrote or could have written. */
+  destinationPath: string | null;
+  /** SHA-256 of the bytes it wrote or was about to write there. */
+  writtenSha256: string | null;
+  /** The operation was erased before it finished. */
+  abandonedGeneration: boolean;
+}>;
+
 /** SQL rows stay untrusted until the owner decodes their stored representation. */
 export type MediaOperationStorage = {
   /** Native synchronous SQL interface. */
@@ -15,14 +25,19 @@ export type MediaOperationStorage = {
   transactionSync<T>(body: () => T): T;
   /** Read the durable erasure marker. */
   isErased(): Promise<boolean>;
-  /** Persist the durable erasure marker. */
-  markErased(): Promise<void>;
+  /**
+   * Persist the durable erasure marker with the facts the host needs after
+   * erasure. Never removed: nothing may delete it.
+   */
+  markErased(marker: MediaErasureMarker): Promise<void>;
+  /** Read the facts kept with the marker, or null for a marker without them. */
+  readErasureMarker(): Promise<MediaErasureMarker | null>;
   /** List local key-value storage keys for erasure readback. */
   listKeys(): Promise<readonly string[]>;
   /** Remove any scheduled background alarm. */
   deleteAlarm(): Promise<void>;
-  /** Remove local SQL and key-value storage. */
-  deleteAll(): Promise<void>;
+  /** Remove the named key-value entries. */
+  deleteKeys(keys: readonly string[]): Promise<void>;
   /** Read the current background alarm, or null. */
   getAlarm(): Promise<number | null>;
   /** Schedule background generation at the given timestamp. */

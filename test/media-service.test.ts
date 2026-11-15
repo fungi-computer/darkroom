@@ -127,6 +127,35 @@ describe("retained Media model boundary", () => {
     });
   });
 
+  it("carries each model's guidance into the Workers AI body, caller value overriding", () => {
+    const body = (model: string, guidance?: number) => {
+      const input = { ...base, model, width: 1024, height: 1024 };
+      return buildProviderInput(
+        validateMediaGenerationSettings(
+          guidance === undefined ? input : { ...input, guidance },
+        ),
+      );
+    };
+    expect(body("@cf/leonardo/lucid-origin")).toMatchObject({
+      body: { guidance: 5 },
+    });
+    expect(body("@cf/leonardo/phoenix-1.0")).toMatchObject({
+      body: { guidance: 3 },
+    });
+    expect(body("@cf/leonardo/phoenix-1.0", 7.5)).toMatchObject({
+      body: { guidance: 7.5 },
+    });
+    expect(body("@cf/black-forest-labs/flux-1-schnell").transport).toBe("json");
+    expect(
+      body("@cf/black-forest-labs/flux-1-schnell").body,
+    ).not.toHaveProperty("guidance");
+    expect(() => body("@cf/leonardo/phoenix-1.0", 1)).toThrow(/guidance/iu);
+    expect(() => body("@cf/leonardo/lucid-origin", 11)).toThrow(/guidance/iu);
+    expect(() => body("@cf/black-forest-labs/flux-1-schnell", 3)).toThrow(
+      /does not take guidance/iu,
+    );
+  });
+
   it("normalizes prompts and model defaults while enforcing model limits", () => {
     const phoenix = validateMediaGenerationSettings({
       ...base,

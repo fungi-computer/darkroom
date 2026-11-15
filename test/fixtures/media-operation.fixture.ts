@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 import { vi } from "vitest";
 import { createNativeSqliteOwnerFixture } from "../../../../packages/shiitake/test/fixtures/native-sqlite-owner.fixture.js";
+import type { MediaErasureMarker } from "../../src/media-operation-storage.js";
 import {
   MediaOperationOwner,
   type MediaOperationHooks,
@@ -76,28 +77,30 @@ export function mediaOperationFixture(
       sql: native.owner.sql,
       transactionSync: native.owner.transactionSync,
       isErased: () => Promise.resolve(kv.get("botanical:erased") === true),
-      markErased: () => {
+      markErased: (marker: MediaErasureMarker) => {
+        kv.set("botanical:erased-details", marker);
         kv.set("botanical:erased", true);
         return Promise.resolve();
       },
+      readErasureMarker: () =>
+        Promise.resolve(
+          Schema.decodeUnknownSync(
+            Schema.UndefinedOr(
+              Schema.Struct({
+                destinationPath: Schema.NullOr(Schema.String),
+                writtenSha256: Schema.NullOr(Schema.String),
+                abandonedGeneration: Schema.Boolean,
+              }),
+            ),
+          )(kv.get("botanical:erased-details")) ?? null,
+        ),
       listKeys: () => Promise.resolve([...kv.keys()]),
       deleteAlarm: () => {
         alarm = null;
         return Promise.resolve();
       },
-      deleteAll: () => {
-        kv.clear();
-        const tables = Schema.decodeUnknownSync(
-          Schema.Array(Schema.Struct({ name: Schema.String })),
-        )(
-          native.owner.sql
-            .exec(
-              "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
-            )
-            .toArray(),
-        );
-        for (const { name } of tables)
-          native.owner.sql.exec(`DROP TABLE ${name}`);
+      deleteKeys: (keys: readonly string[]) => {
+        for (const key of keys) kv.delete(key);
         return Promise.resolve();
       },
       getAlarm: () => Promise.resolve(alarm),

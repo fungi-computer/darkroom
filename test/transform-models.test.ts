@@ -284,6 +284,7 @@ describe("providers", () => {
         },
         destination: {
           authorize: () => Promise.resolve(),
+          remove: () => Promise.resolve("absent" as const),
           write: (path) => {
             writes.push(path);
             return Promise.resolve();
@@ -356,6 +357,7 @@ describe("providers", () => {
         },
         destination: {
           authorize: () => Promise.resolve(),
+          remove: () => Promise.resolve("absent" as const),
           write: () => Promise.resolve(),
           readReference: async () => sourceImage(64, 64, "webp"),
         },

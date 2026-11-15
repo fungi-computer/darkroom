@@ -5,6 +5,7 @@ import {
   MediaSettingsError,
   type ReferenceImageFitter,
 } from "../src/index.js";
+import { mediaWrittenDigest } from "../src/media-written.js";
 import {
   createR2MediaDestination,
   type MediaR2Bucket,
@@ -33,6 +34,10 @@ function fixture(authorize?: (key: string) => Promise<void> | void) {
       );
     },
     put,
+    delete: (key) => {
+      objects.delete(key);
+      return Promise.resolve();
+    },
   };
   const fit = vi.fn<ReferenceImageFitter>((bytes) =>
     Promise.resolve({ bytes, format: "png", width: 1, height: 1 }),
@@ -137,5 +142,25 @@ describe("createR2MediaDestination", () => {
     ).rejects.toThrow("denied");
     expect(put).not.toHaveBeenCalled();
     expect(authorize).toHaveBeenCalledWith("out/ok.png");
+  });
+});
+
+describe("createR2MediaDestination remove", () => {
+  it("authorizes the key, then deletes only an object that still holds what was written", async () => {
+    const authorize = vi.fn();
+    const { objects, destination } = fixture(authorize);
+    objects.set("out/a.png", { bytes: png, size: png.byteLength });
+    objects.set("out/b.png", { bytes: png, size: png.byteLength });
+    const sha256 = await mediaWrittenDigest(png);
+    expect(await destination.remove("out/a.png", { sha256 })).toBe("removed");
+    expect(authorize).toHaveBeenCalledWith("out/a.png");
+    expect([...objects.keys()]).toEqual(["out/b.png"]);
+    expect(await destination.remove("out/a.png", { sha256 })).toBe("absent");
+    objects.set("out/b.png", { bytes: new Uint8Array([1]), size: 1 });
+    expect(await destination.remove("out/b.png", { sha256 })).toBe("not-ours");
+    expect([...objects.keys()]).toEqual(["out/b.png"]);
+    await expect(destination.remove("bad\0key", { sha256 })).rejects.toThrow(
+      MediaSettingsError,
+    );
   });
 });

@@ -125,6 +125,8 @@ export type MediaGenerationSettings = Readonly<{
   height?: number;
   /** Model-specific inference steps. */
   steps?: number;
+  /** Prompt guidance for models that take it; the catalog default when omitted. */
+  guidance?: number;
   /** Video and music models only: output length in whole seconds. */
   durationSeconds?: number;
   /** Upscale only: the output size in megapixels. */
@@ -249,6 +251,8 @@ export const mediaGenerationSettingsSchema = z
     height: z.number().int().min(1).max(5_040).optional(),
     /** Model-specific inference step count. */
     steps: z.number().int().optional(),
+    /** Prompt guidance; models without a catalog guidance range refuse it. */
+    guidance: z.number().optional(),
     /** Requested video or music length in whole seconds. */
     durationSeconds: z.number().int().optional(),
     /** Upscale only: the output size in megapixels, one of the model's offered sizes. */
@@ -341,6 +345,7 @@ type MutableMediaGenerationSettings<Reference> = {
   width?: number;
   height?: number;
   steps?: number;
+  guidance?: number;
   durationSeconds?: number;
   /** Upscale output size in megapixels. */
   targetMegapixels?: number;
@@ -463,6 +468,7 @@ function normalizeGenerationSettings<
       input.width !== undefined ||
       input.height !== undefined ||
       input.steps !== undefined ||
+      input.guidance !== undefined ||
       input.resolution !== undefined ||
       input.aspectRatio !== undefined ||
       input.generateAudio !== undefined ||
@@ -553,6 +559,18 @@ function normalizeGenerationSettings<
     steps = model.input.defaultSteps;
   }
 
+  let guidance: number | undefined;
+  const range = model.input.guidance;
+  if (input.guidance !== undefined && range === null)
+    throw new MediaSettingsError(`${model.id} does not take guidance`);
+  if (range !== null) {
+    guidance = input.guidance ?? range.default;
+    if (guidance < range.min || guidance > range.max)
+      throw new MediaSettingsError(
+        `${model.id} accepts guidance from ${String(range.min)} through ${String(range.max)}`,
+      );
+  }
+
   let references: readonly Reference[] | undefined;
   if (input.references !== undefined) {
     if (input.references.length > model.input.maxReferences)
@@ -568,6 +586,7 @@ function normalizeGenerationSettings<
     height,
   };
   if (steps !== undefined) normalized.steps = steps;
+  if (guidance !== undefined) normalized.guidance = guidance;
   if (durationSeconds !== undefined)
     normalized.durationSeconds = durationSeconds;
   if (model.video !== null) {
@@ -860,6 +879,7 @@ function normalizeTransformSettings<
     input.width !== undefined ||
     input.height !== undefined ||
     input.steps !== undefined ||
+    input.guidance !== undefined ||
     input.durationSeconds !== undefined ||
     input.resolution !== undefined ||
     input.aspectRatio !== undefined ||
@@ -1012,6 +1032,8 @@ export type MediaJsonBody = Readonly<{
   steps?: number;
   /** Steps for models using the num_steps field. */
   num_steps?: number;
+  /** Prompt guidance for models that take it. */
+  guidance?: number;
 }>;
 type MutableMediaJsonBody = {
   prompt: string;
@@ -1019,6 +1041,7 @@ type MutableMediaJsonBody = {
   height?: number;
   steps?: number;
   num_steps?: number;
+  guidance?: number;
 };
 /** A model-specific JSON body or multipart form ready for transport. */
 export type MediaProviderPayload =
@@ -1065,6 +1088,8 @@ export const buildProviderInput = (
       body.steps = settings.steps;
     if (settings.steps !== undefined && model.input.steps === "num_steps")
       body.num_steps = settings.steps;
+    if (settings.guidance !== undefined && model.input.guidance !== null)
+      body.guidance = settings.guidance;
     return Object.freeze({
       transport: "json",
       body: Object.freeze(body),

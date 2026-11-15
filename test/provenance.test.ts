@@ -54,6 +54,25 @@ async function verify(original: Uint8Array, output: Uint8Array) {
   expect(packet).not.toMatch(/actorUserId|costMilliunits/);
   return packet;
 }
+describe("the prompt is private unless the host opts in", () => {
+  for (const format of formats) {
+    it(`${format}: XMP has no fungi:prompt when the prompt is null, and has it when supplied`, async () => {
+      const original = await image(format);
+      const omitted = await embedProvenance(original, format, {
+        ...facts,
+        prompt: null,
+      });
+      expect(omitted.embedded).toBe(true);
+      const omittedPacket = await verify(original, omitted.bytes);
+      expect(omittedPacket).not.toContain("fungi:prompt");
+      expect(omittedPacket).not.toContain("fungus");
+      const included = await embedProvenance(original, format, facts);
+      expect(await verify(original, included.bytes)).toContain(
+        "<fungi:prompt>a fungus wearing a tiny hat &amp; &lt;raincoat&gt;</fungi:prompt>",
+      );
+    });
+  }
+});
 describe("provenance preserves real provider images", () => {
   for (const format of formats) {
     it(`${format}: replaces provider XMP, preserves decoded pixels and is deterministic`, async () => {

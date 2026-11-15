@@ -9,6 +9,7 @@ import { reportCatchFailure } from "./failure.js";
 
 import { mediaUnits } from "./gateway-models.js";
 import { getMediaModel } from "./model-catalog.js";
+import { mediaWrittenDigest } from "./media-written.js";
 import { embedProvenance, type ProvenanceEmbedResult } from "./provenance.js";
 import { z } from "zod";
 import type { MediaImage } from "./media-operation-owner.js";
@@ -211,6 +212,24 @@ export function executeMediaOperation(input: MediaExecution) {
         yield* call(
           () => input.operation.recordEstimate(leaseId, costMilliunits),
           "estimate",
+        ).pipe(
+          // Erasure settled its hold before this admit ran, so the hold just
+          // opened belongs to nobody: release it rather than leave it to expire.
+          Effect.tapError(() =>
+            call(async () => {
+              const kept = await input.operation.retained(
+                input.coordinates.namespace,
+                input.requestId,
+              );
+              if (kept === null && metering !== null)
+                await metering.settle({ operationId, units: 0 });
+            }, "billing").pipe(
+              Effect.catch((cause) => {
+                reportCatchFailure("media-operation-erased-hold", cause);
+                return Effect.void;
+              }),
+            ),
+          ),
         );
         if (background) {
           // Video outlives one request: the owner's alarm generates, and a
@@ -330,7 +349,8 @@ export function executeMediaOperation(input: MediaExecution) {
               embedProvenance(output.bytes, format.data, {
                 printId: operationId,
                 model: input.request.model,
-                prompt: input.request.prompt,
+                prompt:
+                  input.embedPrompt === true ? input.request.prompt : null,
                 createdAt: admission.operation.createdAt,
               }),
             "operation",
@@ -346,6 +366,17 @@ export function executeMediaOperation(input: MediaExecution) {
           format: output.format,
           reason: provenance.reason,
         });
+      // The digest of what is about to land is durable before it lands, so an
+      // erasure knows which file is this operation's and refuses the write.
+      const digest = yield* call(
+        () => mediaWrittenDigest(provenance.bytes),
+        "operation",
+      );
+      const receipt = `sha256:${digest}`;
+      yield* call(
+        () => input.operation.recordWriteIntent(leaseId, digest),
+        "operation",
+      );
       yield* call(
         () => input.destination.write(provenance.bytes),
         "destination-write",
@@ -360,16 +391,32 @@ export function executeMediaOperation(input: MediaExecution) {
         bytes: provenance.bytes.byteLength,
         format: output.format,
       };
+      // The write landed. If erasure won the race the operation can no longer
+      // record it, and nothing else points at the file: delete what landed.
+      const deleteIfErased = <E>(error: E) =>
+        call(async () => {
+          const kept = await input.operation.retained(
+            input.coordinates.namespace,
+            input.requestId,
+          );
+          if (kept === null) await input.destination.remove(digest);
+        }, "destination-write").pipe(
+          Effect.catch((cause) => {
+            reportCatchFailure("media-operation-erased-write", cause);
+            return Effect.void;
+          }),
+          Effect.andThen(Effect.fail(error)),
+        );
       if (metering === null) {
         yield* call(
           () =>
             input.operation.recordWrittenWithoutSettlement(
               leaseId,
-              "computer-write-committed",
+              receipt,
               image,
             ),
           "operation",
-        );
+        ).pipe(Effect.catch(deleteIfErased));
         return {
           kind: "succeeded" as const,
           bytes: image.bytes,
@@ -378,14 +425,9 @@ export function executeMediaOperation(input: MediaExecution) {
         };
       }
       yield* call(
-        () =>
-          input.operation.recordWritten(
-            leaseId,
-            "computer-write-committed",
-            image,
-          ),
+        () => input.operation.recordWritten(leaseId, receipt, image),
         "operation",
-      );
+      ).pipe(Effect.catch(deleteIfErased));
     }
     if (metering === null) return { kind: "unavailable" as const };
     yield* call(

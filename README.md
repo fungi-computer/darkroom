@@ -142,9 +142,11 @@ validates every request against the active provider's catalogue, so `fal-ai/...`
 ids are accepted by your provider and refused by the gateway's.
 
 Each entry carries the per-model bounds the validator enforces: prompt length,
-dimensions or exact sizes, steps, reference counts, and for video the durations,
-resolution/aspect formats and per-second prices. Mark a video model's
-`video.provider` as `"host"`: your provider owns that model's wire grammar.
+dimensions or exact sizes, steps, prompt `guidance` (bounds and default, or
+`null` when the model takes none; a caller's explicit value overrides the
+default), reference counts, and for video the durations, resolution/aspect
+formats and per-second prices. Mark a video model's `video.provider` as
+`"host"`: your provider owns that model's wire grammar.
 
 ```ts
 import {
@@ -176,6 +178,7 @@ export const falCatalogue = parseMediaCatalogue([
       steps: "fixed",
       maxSteps: null,
       defaultSteps: null,
+      guidance: null,
       referenceField: "image_url",
       maxReferences: 1,
       referenceDimension: null,
@@ -351,6 +354,14 @@ add an `AI` binding to your host. `createImagesReferenceFitter` prepares bounded
 reference images through an Images binding, using the selected catalog model
 passed to the fitter. Your host authorizes each reference read.
 
+Saved PNG, JPEG and WebP images carry the AI marker, print ID, model and
+creation time in XMP. The prompt is private by default: it is embedded as
+`fungi:prompt` only when the host opts in per generation, with
+`embedPrompt: true` on `generateMedia`'s request, or `embedPrompt: true` on the
+`createMediaService` host for its `/generate` route. Omit it to keep prompts out
+of generated files. `embedProvenance` takes `prompt: string | null` in its
+facts; `null` leaves it out.
+
 `stripPrivateProvenance(bytes)` from `provenance` removes prompt and lineage
 metadata while preserving the AI marker, print ID and image encoding. It returns
 bytes, MIME type and filename extension. The public XMP format uses
@@ -404,6 +415,43 @@ MiB for images, 16 MiB for audio) is refused. These refusals, and a failed
 validated settings. Output is saved with its content type, and a retry with the
 same request ID reuses the saved output instead of calling the provider again. A
 runnable Worker is in [`examples/standalone`](examples/standalone).
+
+## Recover or erase retained results
+
+A generation keeps three things by operation (request) id: the exact provider
+bytes in `APP_ARTIFACTS` (`media-output/v1/<operation>`), any background
+reference copies, and the file it wrote to your destination path. From
+`@fungi.computer/darkroom/server`, all scoped to `host.scope.namespace` (another
+namespace is refused):
+
+- `retainedMedia(host, requestId)` lists them: the state, the destination path
+  and the retained output's size, format and content type. It finds output a
+  crash left unrecorded (written to R2, never noted in SQL). It returns null
+  once erased.
+- `readRetainedMedia(host, requestId)` returns those exact provider bytes and
+  their format, before any provenance, so you can re-save a result whose
+  destination write was lost.
+- `eraseMediaOperation(host, requestId)` erases all of it, even mid-generation.
+  The operation is marked erased first, durably, and the marker is never
+  removed: an attempt still running, or a lease recovered later, can no longer
+  write or transition, a restart cannot resurrect it, and output that lands
+  after the mark is deleted. Before each destination write the operation records
+  the SHA-256 of the bytes it is about to write; erasure deletes the destination
+  file only while it still holds those bytes (`destinationFile` reports
+  `"removed"`, `"absent"`, `"not-ours"` for a path reused for something else, or
+  `"kept"`). A generation erased before it finished has its billing hold settled
+  at zero units (`metering.settle`, idempotent). It returns `clear`, and a put
+  still in flight or a failed late delete keeps `clear` false: call it again
+  until `clear` is true.
+
+Your destination supplies `remove(path, { sha256 })`, required. Use
+`removeMediaIfWritten` to compare and delete, or return `"kept"` when the
+destination cannot delete files. `createR2MediaDestination` implements it.
+`MediaOperationDO` exposes `retained(namespace, requestId)`,
+`readRetained(namespace, requestId)` and `erase(namespace, requestId, policy)`.
+`policy` is `"abort-active"` (default) or `"refuse-active"`, which refuses a
+running operation atomically with the erase for a host that waits for
+inactivity. `preflightErasure` remains an optional read-only check.
 
 ## Limits
 

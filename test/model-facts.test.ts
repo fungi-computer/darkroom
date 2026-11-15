@@ -109,6 +109,7 @@ describe("model facts", () => {
         metering: "unmetered",
         destination: {
           authorize: () => Promise.resolve(),
+          remove: () => Promise.resolve("absent" as const),
           write: () => Promise.resolve(),
         },
       });

@@ -79,7 +79,11 @@ function execute(
     requestId,
     request,
     metering,
-    destination: { authorize: () => Promise.resolve(), write },
+    destination: {
+      authorize: () => Promise.resolve(),
+      write,
+      remove: () => Promise.resolve("absent" as const),
+    },
     generation: {
       prepare: () =>
         Promise.resolve({
@@ -174,7 +178,11 @@ describe("MediaOperationOwner internal durable owner", () => {
           settle: () => Promise.resolve(),
         },
         refusalMessages,
-        destination: { authorize: () => Promise.resolve(), write },
+        destination: {
+          authorize: () => Promise.resolve(),
+          write,
+          remove: () => Promise.resolve("absent" as const),
+        },
       });
       const response = await service.request("/generate", {
         method: "POST",
@@ -221,12 +229,14 @@ describe("MediaOperationOwner internal durable owner", () => {
       expect(test.owner.preflightErasure("team-a", "request-a")).toMatchObject({
         erased: false,
       });
-      expect(await test.owner.erase("team-a", "request-a")).toEqual({
+      const erased = {
         clear: true,
-      });
-      expect(await test.owner.erase("team-a", "request-a")).toEqual({
-        clear: true,
-      });
+        destinationPath: "generated/greenhouse.png",
+        writtenSha256: null,
+        abandonedGeneration: false,
+      };
+      expect(await test.owner.erase("team-a", "request-a")).toEqual(erased);
+      expect(await test.owner.erase("team-a", "request-a")).toEqual(erased);
       expect(await test.owner.readErasure()).toEqual({ clear: true });
       expect(test.owner.read()).toBeNull();
       expect(() => admit(test.owner)).toThrow();
@@ -915,7 +925,11 @@ describe("MediaOperationOwner internal durable owner", () => {
             provider: createWorkersAiMediaProvider({ run }),
             metering: billing.metering,
             refusalMessages,
-            destination: { authorize: () => Promise.resolve(), write },
+            destination: {
+              authorize: () => Promise.resolve(),
+              write,
+              remove: () => Promise.resolve("absent" as const),
+            },
           });
           const generationRequest = {
             method: "POST",
@@ -1132,7 +1146,11 @@ describe("MediaOperationOwner internal durable owner", () => {
           requestId: "video-a",
           request: input,
           metering,
-          destination: { authorize: () => Promise.resolve(), write },
+          destination: {
+            authorize: () => Promise.resolve(),
+            write,
+            remove: () => Promise.resolve("absent" as const),
+          },
           generation: {
             prepare: () =>
               Promise.resolve({
@@ -1174,7 +1192,11 @@ describe("MediaOperationOwner internal durable owner", () => {
           provider,
           metering: billing.metering,
           refusalMessages,
-          destination: { authorize: () => Promise.resolve(), write },
+          destination: {
+            authorize: () => Promise.resolve(),
+            write,
+            remove: () => Promise.resolve("absent" as const),
+          },
         });
         const generationRequest = {
           method: "POST",
@@ -1490,7 +1512,11 @@ it("charges a provider format mismatch durably and never redispatches or refunds
       admit: () => Promise.resolve({ priceMilliunits: 125 }),
       settle,
     },
-    destination: { authorize: () => Promise.resolve(), write },
+    destination: {
+      authorize: () => Promise.resolve(),
+      write,
+      remove: () => Promise.resolve("absent" as const),
+    },
     generation: {
       prepare: () =>
         Promise.resolve({

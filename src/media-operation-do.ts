@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { z } from "zod";
 import {
   createWorkersAiMediaProvider,
   type MediaAiPort,
@@ -21,6 +22,12 @@ export type {
   MediaOperationCoordinates,
   MediaOperationEnvironment,
 } from "./media-operation-owner.js";
+
+const erasureMarkerSchema = z.strictObject({
+  destinationPath: z.string().nullable(),
+  writtenSha256: z.string().nullable(),
+  abandonedGeneration: z.boolean(),
+});
 
 /** Retention storage and native background provider bindings for the operation DO. */
 export type MediaOperationCloudflareEnvironment = MediaOperationEnvironment &
@@ -56,10 +63,30 @@ export class MediaOperationDO
           transactionSync: (body) => ctx.storage.transactionSync(body),
           isErased: async () =>
             (await ctx.storage.get("botanical:erased")) === true,
-          markErased: () => ctx.storage.put("botanical:erased", true),
+          markErased: async (marker) => {
+            // Facts first: the marker's presence is what means erased.
+            await ctx.storage.put(
+              "botanical:erased-details",
+              JSON.stringify(marker),
+            );
+            await ctx.storage.put("botanical:erased", true);
+          },
+          readErasureMarker: async () => {
+            const details = z
+              .string()
+              .optional()
+              .parse(await ctx.storage.get("botanical:erased-details"));
+            return details === undefined
+              ? null
+              : erasureMarkerSchema.parse(JSON.parse(details));
+          },
           listKeys: async () => [...(await ctx.storage.list()).keys()],
           deleteAlarm: () => ctx.storage.deleteAlarm(),
-          deleteAll: () => ctx.storage.deleteAll(),
+          deleteKeys: async (keys) => {
+            // Storage deletes at most 128 keys per call.
+            for (let start = 0; start < keys.length; start += 128)
+              await ctx.storage.delete(keys.slice(start, start + 128));
+          },
           getAlarm: () => ctx.storage.getAlarm(),
           setAlarm: (timestamp) => ctx.storage.setAlarm(timestamp),
         },
@@ -119,11 +146,29 @@ export class MediaOperationDO
   ): ReturnType<MediaOperationOwner["preflightErasure"]> {
     return this.owner.preflightErasure(...input);
   }
+  /** {@inheritDoc MediaOperationOwner.recordWriteIntent} */
+  recordWriteIntent(
+    ...input: Parameters<MediaOperationOwner["recordWriteIntent"]>
+  ): ReturnType<MediaOperationOwner["recordWriteIntent"]> {
+    return this.owner.recordWriteIntent(...input);
+  }
   /** {@inheritDoc MediaOperationOwner.erase} */
   erase(
     ...input: Parameters<MediaOperationOwner["erase"]>
   ): ReturnType<MediaOperationOwner["erase"]> {
     return this.owner.erase(...input);
+  }
+  /** {@inheritDoc MediaOperationOwner.retained} */
+  retained(
+    ...input: Parameters<MediaOperationOwner["retained"]>
+  ): ReturnType<MediaOperationOwner["retained"]> {
+    return this.owner.retained(...input);
+  }
+  /** {@inheritDoc MediaOperationOwner.readRetained} */
+  readRetained(
+    ...input: Parameters<MediaOperationOwner["readRetained"]>
+  ): ReturnType<MediaOperationOwner["readRetained"]> {
+    return this.owner.readRetained(...input);
   }
   /** {@inheritDoc MediaOperationOwner.readErasure} */
   readErasure(

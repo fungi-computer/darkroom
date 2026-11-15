@@ -22,10 +22,17 @@ export {
 } from "./cloudflare/r2-destination.js";
 
 export { MediaOperationOwner } from "./media-operation-owner.js";
-export type { MediaShareSource } from "./media-operation-owner.js";
+export type {
+  MediaErasure,
+  MediaRetained,
+  MediaRetainedBytes,
+  MediaErasePolicy,
+  MediaShareSource,
+} from "./media-operation-owner.js";
 export type {
   MediaOperationContext,
   MediaOperationStorage,
+  MediaErasureMarker,
   MediaOperationBucket,
   MediaOperationObject,
 } from "./media-operation-storage.js";

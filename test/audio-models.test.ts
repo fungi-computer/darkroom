@@ -375,6 +375,7 @@ describe("audio through the durable service", () => {
         },
         destination: {
           authorize: () => Promise.resolve(),
+          remove: () => Promise.resolve("absent" as const),
           write: (_path, bytes) => {
             writes.push(bytes);
             return Promise.resolve();

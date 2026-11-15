@@ -1,5 +1,25 @@
 # @fungi.computer/darkroom
 
+## 0.11.0
+
+### Minor Changes
+
+- Changes since 0.10.0:
+
+  - fix(darkroom): keep the write digest through recovery and release a hold
+    opened after erasure
+  - fix(darkroom): drop an unused erasure marker re-export
+  - fix(darkroom): make erasure durable, scoped and safe for reused destination
+    paths
+  - fix(darkroom): keep prompts out of image metadata and erase every retained
+    result
+  - feat(darkroom): carry per-model guidance for workers ai image models
+
+### Patch Changes
+
+- Updated dependencies
+  - @fungi.computer/agar@0.18.0
+
 ## 0.10.0
 
 ### Minor Changes

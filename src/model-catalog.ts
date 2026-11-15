@@ -71,6 +71,27 @@ export const mediaModelInputSchema = z.lazy(() =>
       maxSteps: z.number().int().positive().nullable(),
       /** Default inference step count. */
       defaultSteps: z.number().int().nonnegative().nullable(),
+      /**
+       * Prompt-guidance (`guidance`) bounds and default sent to the provider, or
+       * null when the model takes no guidance field. A host's own catalogue may
+       * omit the key; absent means null.
+       */
+      guidance: z
+        .strictObject({
+          /** Lowest value the provider accepts. */
+          min: z.number().nonnegative(),
+          /** Highest value the provider accepts. */
+          max: z.number().positive(),
+          /** Value sent when the caller names none. */
+          default: z.number().nonnegative(),
+        })
+        .readonly()
+        .refine(
+          (g) => g.min <= g.default && g.default <= g.max,
+          "guidance default must lie within its bounds",
+        )
+        .nullable()
+        .default(null),
       /** Provider multipart reference-field prefix, or null when unsupported. */
       referenceField: z.string().min(1).max(256).nullable(),
       /** Maximum references accepted by this model. */
@@ -775,6 +796,7 @@ function videoModel(
       steps: "fixed",
       maxSteps: null,
       defaultSteps: null,
+      guidance: null,
       referenceField: seedance ? "image" : "image_input",
       maxReferences: seedance ? maxReferenceImages : 1,
       referenceDimension: null,
@@ -890,6 +912,7 @@ function minimaxVideoModel(): MediaModel {
       steps: "fixed",
       maxSteps: null,
       defaultSteps: null,
+      guidance: null,
       // Inert for this gateway model (media-generation.ts builds its body
       // directly); recorded for the same documentation parity as Seedance/Veo.
       referenceField: "image_url",
@@ -984,6 +1007,7 @@ function audioModel(
       steps: "fixed",
       maxSteps: null,
       defaultSteps: null,
+      guidance: null,
       referenceField: null,
       maxReferences: 0,
       referenceDimension: null,
@@ -1052,6 +1076,7 @@ function transformModel(
       steps: "fixed",
       maxSteps: null,
       defaultSteps: null,
+      guidance: null,
       referenceField: "image",
       maxReferences: 1,
       // The hosts' reference fitter only shrinks; this keeps any source within
@@ -1080,6 +1105,7 @@ const models: readonly MediaModel[] = Object.freeze([
       steps: "steps",
       maxSteps: 8,
       defaultSteps: 4,
+      guidance: null,
       referenceField: null,
       maxReferences: 0,
       // No documented reference size for this model; the retained 512 px fit.
@@ -1103,6 +1129,7 @@ const models: readonly MediaModel[] = Object.freeze([
       steps: "fixed",
       maxSteps: null,
       defaultSteps: 4,
+      guidance: null,
       referenceField: "input_image_",
       maxReferences: 4,
       // No documented reference size for this model; the retained 512 px fit.
@@ -1126,6 +1153,7 @@ const models: readonly MediaModel[] = Object.freeze([
       steps: "fixed",
       maxSteps: null,
       defaultSteps: 4,
+      guidance: null,
       referenceField: "input_image_",
       maxReferences: 4,
       // No documented reference size for this model; the retained 512 px fit.
@@ -1149,6 +1177,7 @@ const models: readonly MediaModel[] = Object.freeze([
       steps: "steps",
       maxSteps: null,
       defaultSteps: 20,
+      guidance: null,
       referenceField: "input_image_",
       maxReferences: 4,
       // No documented reference size for this model; the retained 512 px fit.
@@ -1173,6 +1202,9 @@ const models: readonly MediaModel[] = Object.freeze([
       steps: "num_steps",
       maxSteps: 40,
       defaultSteps: null,
+      // https://developers.cloudflare.com/workers-ai/models/lucid-origin/ (guidance range); the
+      // default is the value Loftwah's studio tuned for this model.
+      guidance: { min: 0, max: 10, default: 5 },
       referenceField: null,
       maxReferences: 0,
       // No documented reference size for this model; the retained 512 px fit.
@@ -1197,6 +1229,9 @@ const models: readonly MediaModel[] = Object.freeze([
       steps: "num_steps",
       maxSteps: 50,
       defaultSteps: 25,
+      // https://developers.cloudflare.com/workers-ai/models/phoenix-1.0/ (guidance range); the
+      // default is the value Loftwah's studio tuned for this model.
+      guidance: { min: 2, max: 10, default: 3 },
       referenceField: null,
       maxReferences: 0,
       // No documented reference size for this model; the retained 512 px fit.
@@ -1224,6 +1259,7 @@ const models: readonly MediaModel[] = Object.freeze([
       steps: "fixed",
       maxSteps: null,
       defaultSteps: null,
+      guidance: null,
       // Cloudflare documents `images[]` (base64 strings or data URIs, 1-16
       // entries, routed to OpenAI's /v1/images/edits) for this exact model:
       // https://developers.cloudflare.com/ai/models/openai/gpt-image-2/
@@ -1262,6 +1298,7 @@ const models: readonly MediaModel[] = Object.freeze([
       steps: "fixed",
       maxSteps: null,
       defaultSteps: null,
+      guidance: null,
       // The page says the model takes up to 10 reference images (`image`, a
       // string or 1-10 strings) but shows only URL inputs and states no
       // base64 or data-URI form, so Prints sends none until it does.

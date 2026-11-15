@@ -13,6 +13,7 @@ import { z } from "zod";
 import type {
   MediaOperationContext,
   MediaOperationBucket,
+  MediaErasureMarker,
 } from "./media-operation-storage.js";
 import type {
   MediaAudioReferenceBytes,
@@ -63,6 +64,40 @@ const audioReferenceMetadataSchema = z.lazy(() =>
 );
 const audioReferenceKey = (operationId: string, index: number) =>
   `media-audio-reference/v1/${operationId}/${String(index)}`;
+
+const activeStates: readonly MediaOperationState[] = [
+  "estimating",
+  "generating",
+  "writing",
+  "charging",
+];
+/** States whose billing hold the executor has not yet settled itself. */
+const holdOpenStates: readonly MediaOperationState[] = [
+  "estimating",
+  "generating",
+  "writing",
+];
+const writeReceiptSchema = z.string().regex(/^sha256:([0-9a-f]{64})$/);
+function erasureMarker(record: OperationRecord | null): MediaErasureMarker {
+  const receipt = writeReceiptSchema.safeParse(record?.writeReceipt);
+  return {
+    destinationPath: record?.input.path ?? null,
+    writtenSha256: receipt.success
+      ? receipt.data.slice("sha256:".length)
+      : null,
+    abandonedGeneration:
+      record !== null && holdOpenStates.includes(record.state),
+  };
+}
+
+const referenceKeys = (record: OperationRecord) => [
+  ...(record.input.references ?? []).map((_reference, index) =>
+    referenceKey(record.operationId, index),
+  ),
+  ...(record.input.audioReferences ?? []).map((_reference, index) =>
+    audioReferenceKey(record.operationId, index),
+  ),
+];
 
 /** Fixed generation destination captured before provider dispatch. */
 export const mediaOperationDestinationSchema = z.lazy(() =>
@@ -286,6 +321,66 @@ export type MediaErasureReadback = Readonly<{
   clear: boolean;
 }>;
 
+/** How `erase` treats an operation that is still generating or saving. */
+export type MediaErasePolicy =
+  /** Abort it: its later writes refuse and anything that lands is deleted. */
+  | "abort-active"
+  /** Refuse, atomically with the erasure, so a host that waits for inactivity never aborts work. */
+  | "refuse-active";
+
+/** Result of erasing one operation: readback plus what the host may still own. */
+export type MediaErasure = MediaErasureReadback &
+  Readonly<{
+    /**
+     * The destination path this operation wrote or could have written, kept
+     * through erasure so the host can delete the file it owns. Null when the
+     * operation was never admitted.
+     */
+    destinationPath: string | null;
+    /**
+     * SHA-256 of the exact bytes this operation wrote, or was about to write,
+     * to `destinationPath`. Delete the file only while it still matches. Null
+     * when no write was ever begun.
+     */
+    writtenSha256: string | null;
+    /**
+     * True when the operation was erased before it finished, so a billing hold
+     * it took may be open. The host settles it at zero units; repeating that
+     * is idempotent.
+     */
+    abandonedGeneration: boolean;
+  }>;
+
+/** Exact provider bytes an operation retained, before any provenance. */
+export type MediaRetainedBytes = Readonly<{
+  /** The retained bytes. */
+  bytes: Uint8Array;
+  /** Actual output encoding. */
+  format: string;
+}>;
+
+/** What one operation still retains, readable by operation id. */
+export type MediaRetained = Readonly<{
+  /** Retry identity of the generation. */
+  requestId: string;
+  /** Current lifecycle state. */
+  state: MediaOperationState;
+  /** The host destination path the generation writes, or may already have written. */
+  destinationPath: string;
+  /**
+   * The exact provider bytes retained in the artifacts bucket, or null before
+   * any were retained. Found by key even when a crash left them unrecorded.
+   */
+  output: Readonly<{
+    /** Retained byte length. */
+    bytes: number;
+    /** Actual output encoding. */
+    format: string;
+    /** Media type of the retained bytes. */
+    contentType: string;
+  }> | null;
+}>;
+
 /** Retained output projection, or a terminal spent format refusal. */
 export type MediaRetentionResult =
   | MediaOperationProjection
@@ -439,6 +534,9 @@ function decodeStoredRequest(
 /** Own exact replay, dispatch leases, retained output and save recovery in SQL and object storage. */
 export class MediaOperationOwner {
   private erased = false;
+  private retainsInFlight = 0;
+  /** Output keys whose delete after a late write failed; erase retries them. */
+  private readonly lateDeletes = new Set<string>();
   private readonly leaseMs = 5 * 60 * 1_000;
   /**
    * A background (video) generation holds its lease past the 15-minute alarm
@@ -465,7 +563,8 @@ export class MediaOperationOwner {
     private readonly hooks: MediaOperationHooks = {},
   ) {
     void ctx.blockConcurrencyWhile(async () => {
-      if (await ctx.storage.isErased()) {
+      const durablyErased = await ctx.storage.isErased();
+      if (durablyErased || this.erased) {
         this.erased = true;
         return;
       }
@@ -648,17 +747,12 @@ export class MediaOperationOwner {
     namespace: string,
     requestId: string,
   ): MediaErasurePreflight {
-    if (this.ctx.id.name !== `media:${requestId}`)
-      throw new Error("Media erasure address mismatch");
-    if (this.erased) return { namespace, requestId, erased: true };
+    if (this.erased) {
+      this.assertErasureAddress(requestId);
+      return { namespace, requestId, erased: true };
+    }
     const record = this.readRecord();
-    const ownerNamespace =
-      record?.namespace ?? this.hooks.namespace?.() ?? null;
-    if (
-      (ownerNamespace !== null && ownerNamespace !== namespace) ||
-      (record !== null && record.requestId !== requestId)
-    )
-      throw new Error("Media erasure scope mismatch");
+    this.assertScope(namespace, requestId, record);
     if (
       record !== null &&
       ["estimating", "generating", "writing", "charging"].includes(record.state)
@@ -667,19 +761,104 @@ export class MediaOperationOwner {
     return { namespace, requestId, erased: false };
   }
 
-  /** Erase inactive output and local storage, then retain the durable erasure marker. */
-  public async erase(namespace: string, requestId: string) {
-    if (this.erased) return this.readErasure();
-    this.preflightErasure(namespace, requestId);
-    // The operation's immutable output key is owned by this DO identity.
-    await this.env.APP_ARTIFACTS.delete(this.erasureOutputKey());
-    if (await this.env.APP_ARTIFACTS.head(this.erasureOutputKey()))
-      throw new Error("Media output erasure readback incomplete");
+  private assertErasureAddress(requestId: string) {
+    if (this.ctx.id.name !== `media:${requestId}`)
+      throw new Error("Media erasure address mismatch");
+  }
+
+  private assertScope(
+    namespace: string,
+    requestId: string,
+    record: OperationRecord | null,
+  ) {
+    this.assertErasureAddress(requestId);
+    const ownerNamespace =
+      record?.namespace ?? this.hooks.namespace?.() ?? null;
+    if (
+      (ownerNamespace !== null && ownerNamespace !== namespace) ||
+      (record !== null && record.requestId !== requestId)
+    )
+      throw new Error("Media erasure scope mismatch");
+  }
+
+  /** The stored record even after erasure began, while its tables still exist. */
+  private readRecordForErasure(): OperationRecord | null {
+    const table = this.ctx.storage.sql
+      .exec(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='hub_media_operation'",
+      )
+      .toArray()[0];
+    if (table === undefined) return null;
+    const row = this.ctx.storage.sql
+      .exec("SELECT * FROM hub_media_operation WHERE singleton=1")
+      .toArray()[0];
+    if (row === undefined) return null;
+    const parsed = operationRowSchema.safeParse(row);
+    if (!parsed.success)
+      throw new MediaOperationError("partial_init", { cause: parsed.error });
+    return this.decode(parsed.data);
+  }
+
+  /**
+   * Erase the operation and everything it retained or could still write, even
+   * mid-generation. Erasure is marked first, so an attempt still running, or a
+   * lease recovered later, can neither transition nor leave output behind: a
+   * write that lands after the mark is deleted. The marker is never removed, so
+   * a crash cannot resurrect the operation. Safe to repeat until `clear`; a
+   * repeat after a partial failure resumes the cleanup.
+   */
+  public async erase(
+    namespace: string,
+    requestId: string,
+    policy: MediaErasePolicy = "abort-active",
+  ): Promise<MediaErasure> {
+    const record = this.readRecordForErasure();
+    this.assertScope(namespace, requestId, record);
+    if (!this.erased) {
+      if (
+        policy === "refuse-active" &&
+        record !== null &&
+        activeStates.includes(record.state)
+      )
+        throw new Error("Media operation is still active");
+      // Synchronously, before any await: nothing in this object transitions again.
+      this.erased = true;
+    }
+    if (!(await this.ctx.storage.isErased()))
+      await this.ctx.storage.markErased(erasureMarker(record));
+    const marker = (await this.ctx.storage.readErasureMarker()) ?? {
+      destinationPath: null,
+      writtenSha256: null,
+      abandonedGeneration: false,
+    };
+    // The immutable output key is owned by this DO identity; background
+    // reference copies hold the person's private inputs.
+    const keys = [
+      this.erasureOutputKey(),
+      ...(record === null ? [] : referenceKeys(record)),
+      ...this.lateDeletes,
+    ];
+    await Promise.all(keys.map((key) => this.env.APP_ARTIFACTS.delete(key)));
+    this.lateDeletes.clear();
     await this.ctx.storage.deleteAlarm();
-    await this.ctx.storage.deleteAll();
-    await this.ctx.storage.markErased();
-    this.erased = true;
-    return this.readErasure();
+    // Never deleteAll: it would remove the marker and its facts.
+    const tables = z
+      .array(z.strictObject({ name: z.string() }))
+      .parse(
+        this.ctx.storage.sql
+          .exec(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+          )
+          .toArray(),
+      );
+    for (const { name } of tables)
+      this.ctx.storage.sql.exec(`DROP TABLE "${name.replaceAll('"', '""')}"`);
+    await this.ctx.storage.deleteKeys(
+      (await this.ctx.storage.listKeys()).filter(
+        (key) => !key.startsWith("botanical:erased"),
+      ),
+    );
+    return { ...(await this.readErasure()), ...marker };
   }
 
   /** Read back empty SQL, alarm and retained output with the durable erasure marker. */
@@ -692,13 +871,111 @@ export class MediaOperationOwner {
       .toArray();
     return {
       clear:
-        keys.length === 1 &&
-        keys[0] === "botanical:erased" &&
+        keys.includes("botanical:erased") &&
+        keys.every((key) => key.startsWith("botanical:erased")) &&
         (await this.ctx.storage.isErased()) &&
         tables.length === 0 &&
+        // A put still in flight, or a late delete that failed, is not clear yet.
+        this.retainsInFlight === 0 &&
+        this.lateDeletes.size === 0 &&
         (await this.ctx.storage.getAlarm()) === null &&
         (await this.env.APP_ARTIFACTS.head(this.erasureOutputKey())) === null,
     };
+  }
+
+  /**
+   * Run a write to the artifacts bucket. If erasure began while it was in
+   * flight, delete what landed and refuse; a failed delete is remembered so
+   * `erase` reports not-clear and a repeat retries it.
+   */
+  private async retaining<T>(
+    keys: readonly string[],
+    write: () => Promise<T>,
+  ): Promise<T> {
+    this.retainsInFlight += 1;
+    try {
+      const written = await write();
+      if (this.erased) {
+        for (const key of keys) this.lateDeletes.add(key);
+        await Promise.all(
+          keys.map((key) => this.env.APP_ARTIFACTS.delete(key)),
+        );
+        for (const key of keys) this.lateDeletes.delete(key);
+        throw new MediaOperationError("not_found");
+      }
+      return written;
+    } finally {
+      this.retainsInFlight -= 1;
+    }
+  }
+
+  private async retainedOutput(record: OperationRecord) {
+    if (record.output !== null)
+      return {
+        key: record.output.key,
+        bytes: record.output.bytes,
+        format: record.output.format,
+        version: record.output.version,
+      };
+    // A crash after the R2 write and before its record leaves exact bytes
+    // nothing points to; find them by the key this operation owns.
+    const head = await this.env.APP_ARTIFACTS.head(
+      `media-output/v1/${record.operationId}`,
+    );
+    if (head === null) return null;
+    return {
+      key: head.key,
+      bytes: head.size,
+      format: retainedFormatSchema.parse(head.httpMetadata?.contentType),
+      version: head.version,
+    };
+  }
+
+  /** List what this operation retains: its destination path and exact provider output. Null once erased. */
+  public async retained(
+    namespace: string,
+    requestId: string,
+  ): Promise<MediaRetained | null> {
+    const record = this.readRecord();
+    this.assertScope(namespace, requestId, record);
+    if (record === null) return null;
+    const output = await this.retainedOutput(record);
+    return Object.freeze({
+      requestId: record.requestId,
+      state: record.state,
+      destinationPath: record.input.path,
+      output:
+        output === null
+          ? null
+          : Object.freeze({
+              bytes: output.bytes,
+              format: output.format,
+              contentType: outputMime(output.format),
+            }),
+    });
+  }
+
+  /**
+   * Read back the exact retained provider bytes, before any provenance, so a
+   * host can re-save a result whose destination write was lost. Null when
+   * erased or nothing was retained.
+   */
+  public async readRetained(
+    namespace: string,
+    requestId: string,
+  ): Promise<MediaRetainedBytes | null> {
+    const record = this.readRecord();
+    this.assertScope(namespace, requestId, record);
+    if (record === null) return null;
+    const output = await this.retainedOutput(record);
+    if (output === null) return null;
+    const object = await this.env.APP_ARTIFACTS.get(output.key);
+    if (object?.version !== output.version || object.size !== output.bytes)
+      throw new MediaOperationError("partial_init");
+    const bytes = new Uint8Array(await object.arrayBuffer());
+    // Erasure may have begun while the object was read.
+    if (this.erased) throw new MediaOperationError("not_found");
+    return { bytes, format: output.format };
   }
 
   private erasureOutputKey() {
@@ -939,7 +1216,8 @@ export class MediaOperationOwner {
             format: output.format,
           },
           output,
-          writeReceipt: null,
+          // A write may have landed before the worker died; the retry writes the same bytes.
+          writeReceipt: record.writeReceipt,
           result: null,
         });
         return {
@@ -1036,31 +1314,33 @@ export class MediaOperationOwner {
     const record = this.requireRecord();
     if (record.state !== "generating" || record.leaseId !== leaseId)
       throw new MediaOperationError("lease_lost");
-    for (const [index, reference] of references.entries()) {
-      await this.env.APP_ARTIFACTS.put(
-        referenceKey(record.operationId, index),
-        reference.bytes,
-        {
-          customMetadata: {
-            format: reference.format,
-            width: String(reference.width),
-            height: String(reference.height),
+    await this.retaining(referenceKeys(record), async () => {
+      for (const [index, reference] of references.entries()) {
+        await this.env.APP_ARTIFACTS.put(
+          referenceKey(record.operationId, index),
+          reference.bytes,
+          {
+            customMetadata: {
+              format: reference.format,
+              width: String(reference.width),
+              height: String(reference.height),
+            },
           },
-        },
-      );
-    }
-    for (const [index, clip] of audioReferences.entries()) {
-      await this.env.APP_ARTIFACTS.put(
-        audioReferenceKey(record.operationId, index),
-        clip.bytes,
-        {
-          customMetadata: {
-            mimeType: clip.mimeType,
-            durationSeconds: String(clip.durationSeconds),
+        );
+      }
+      for (const [index, clip] of audioReferences.entries()) {
+        await this.env.APP_ARTIFACTS.put(
+          audioReferenceKey(record.operationId, index),
+          clip.bytes,
+          {
+            customMetadata: {
+              mimeType: clip.mimeType,
+              durationSeconds: String(clip.durationSeconds),
+            },
           },
-        },
-      );
-    }
+        );
+      }
+    });
     const timestamp = Date.now();
     this.ctx.storage.sql.exec(
       "UPDATE hub_media_operation SET background=1, lease_expires_at=?, updated_at=? WHERE singleton=1 AND state='generating' AND lease_id=?",
@@ -1293,10 +1573,12 @@ export class MediaOperationOwner {
       } as const;
     }
     const key = `media-output/v1/${record.operationId}`;
-    const stored = await this.env.APP_ARTIFACTS.put(key, bytes, {
-      onlyIf: { etagDoesNotMatch: "*" },
-      httpMetadata: { contentType: outputMime(image.data.format) },
-    });
+    const stored = await this.retaining([key], () =>
+      this.env.APP_ARTIFACTS.put(key, bytes, {
+        onlyIf: { etagDoesNotMatch: "*" },
+        httpMetadata: { contentType: outputMime(image.data.format) },
+      }),
+    );
     if (stored === null) throw new MediaOperationError("conflict");
     return this.transition(leaseId, "generating", "writing", {
       estimatedCostMilliunits: record.estimatedCostMilliunits,
@@ -1350,7 +1632,41 @@ export class MediaOperationOwner {
           estimatedCostMilliunits: record.estimatedCostMilliunits,
           image: record.image,
           output: record.output,
-          writeReceipt: null,
+          writeReceipt: record.writeReceipt,
+          result: null,
+        }),
+      ),
+    );
+  }
+
+  /**
+   * Record the digest of the exact bytes about to be written to the
+   * destination, before writing them. An erasure then knows which file this
+   * operation owns, even if the process dies between the write and its
+   * record, and refuses the write once erased.
+   */
+  public recordWriteIntent(
+    leaseId: string,
+    sha256: string,
+  ): MediaOperationProjection {
+    const receipt = `sha256:${sha256}`;
+    if (!writeReceiptSchema.safeParse(receipt).success)
+      throw new MediaOperationError("invalid_input");
+    const record = this.requireRecord();
+    if (record.state !== "writing" || record.leaseId !== leaseId)
+      throw new MediaOperationError("lease_lost");
+    return this.ctx.storage.transactionSync(() =>
+      this.project(
+        this.update({
+          expectedState: "writing",
+          expectedLeaseId: leaseId,
+          state: "writing",
+          leaseId,
+          leaseExpiresAt: record.leaseExpiresAt,
+          estimatedCostMilliunits: record.estimatedCostMilliunits,
+          image: record.image,
+          output: record.output,
+          writeReceipt: receipt,
           result: null,
         }),
       ),

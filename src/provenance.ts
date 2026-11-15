@@ -9,7 +9,11 @@ import { reportCatchFailure } from "./failure.js";
 export type ProvenanceFacts = Readonly<{
   printId: string;
   model: string;
-  prompt: string;
+  /**
+   * The prompt to publish in the file's XMP, or null to leave it out. The host
+   * decides per generation; a prompt is private unless the host opts in.
+   */
+  prompt: string | null;
   createdAt: number;
 }>;
 export type ProvenanceEmbedResult =
@@ -43,7 +47,7 @@ async function packet(facts: ProvenanceFacts): Promise<string> {
     );
   description.ele("fungi:printId").txt(facts.printId);
   description.ele("fungi:model").txt(facts.model);
-  description.ele("fungi:prompt").txt(facts.prompt);
+  if (facts.prompt !== null) description.ele("fungi:prompt").txt(facts.prompt);
   return document.end({ headless: true });
 }
 

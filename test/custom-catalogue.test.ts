@@ -31,6 +31,7 @@ const imageEntry = {
     steps: "steps",
     maxSteps: 12,
     defaultSteps: 6,
+    guidance: null,
     referenceField: null,
     maxReferences: 0,
     referenceDimension: null,
@@ -52,6 +53,7 @@ const videoEntry = {
     steps: "fixed",
     maxSteps: null,
     defaultSteps: null,
+    guidance: null,
     referenceField: "image_url",
     maxReferences: 1,
   },
@@ -159,6 +161,13 @@ describe("provider-owned model catalogue", () => {
     ).toThrow(MediaSettingsError);
   });
 
+  it("treats an omitted guidance key as no guidance", () => {
+    const { guidance, ...input } = imageEntry.input;
+    expect(guidance).toBeNull();
+    const parsed = parseMediaCatalogue([{ ...imageEntry, input }]);
+    expect(parsed[0]?.input.guidance).toBeNull();
+  });
+
   it("refuses catalogues that contradict themselves", () => {
     expect(() => parseMediaCatalogue([])).toThrow(MediaSettingsError);
     expect(() => parseMediaCatalogue([imageEntry, imageEntry])).toThrow(
@@ -199,7 +208,11 @@ describe("provider-owned model catalogue", () => {
         catalogue,
         estimate: () => 1_000,
         metering: "unmetered",
-        destination: { authorize: () => Promise.resolve(), write },
+        destination: {
+          authorize: () => Promise.resolve(),
+          write,
+          remove: () => Promise.resolve("absent" as const),
+        },
       } satisfies MediaServiceHost;
       const models = await createMediaService(host).request("/models");
       const listed = await models.json<{ id: string; billingUnit: string }[]>();

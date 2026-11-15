@@ -26,6 +26,7 @@ const mediaModelPriceEstimateSchema: ZodObject<{
      width: ZodOptional<ZodNumber>;
      height: ZodOptional<ZodNumber>;
      steps: ZodOptional<ZodNumber>;
+     guidance: ZodOptional<ZodNumber>;
      durationSeconds: ZodOptional<ZodNumber>;
      targetMegapixels: ZodOptional<ZodNumber>;
      voiceId: ZodOptional<ZodString>;
@@ -84,6 +85,7 @@ const mediaCatalogModelSchema: ZodReadonly<ZodObject<{
         width: ZodOptional<ZodNumber>;
         height: ZodOptional<ZodNumber>;
         steps: ZodOptional<ZodNumber>;
+        guidance: ZodOptional<ZodNumber>;
         durationSeconds: ZodOptional<ZodNumber>;
         targetMegapixels: ZodOptional<ZodNumber>;
         voiceId: ZodOptional<ZodString>;
@@ -147,6 +149,7 @@ const mediaCatalogModelSchema: ZodReadonly<ZodObject<{
      }>;
      maxSteps: ZodNullable<ZodNumber>;
      defaultSteps: ZodNullable<ZodNumber>;
+     guidance: ZodDefault<ZodNullable<ZodReadonly<ZodObject<..., ...>>>>;
      referenceField: ZodNullable<ZodString>;
      maxReferences: ZodNumber;
      referenceDimension: ZodNullable<ZodNumber>;
@@ -246,6 +249,7 @@ const mediaModelsSchema: ZodLazy<ZodArray<ZodReadonly<ZodObject<{
         width: ZodOptional<...>;
         height: ZodOptional<...>;
         steps: ZodOptional<...>;
+        guidance: ZodOptional<...>;
         durationSeconds: ZodOptional<...>;
         targetMegapixels: ZodOptional<...>;
         voiceId: ZodOptional<...>;
@@ -295,6 +299,7 @@ const mediaModelsSchema: ZodLazy<ZodArray<ZodReadonly<ZodObject<{
      }>;
      maxSteps: ZodNullable<ZodNumber>;
      defaultSteps: ZodNullable<ZodNumber>;
+     guidance: ZodDefault<ZodNullable<...>>;
      referenceField: ZodNullable<ZodString>;
      maxReferences: ZodNumber;
      referenceDimension: ZodNullable<ZodNumber>;
@@ -643,6 +648,7 @@ const appMediaModelsOutcomeSchema: ZodUnion<readonly [ZodLazy<ZodArray<ZodReadon
      steps: ...;
      maxSteps: ...;
      defaultSteps: ...;
+     guidance: ...;
      referenceField: ...;
      maxReferences: ...;
      referenceDimension: ...;

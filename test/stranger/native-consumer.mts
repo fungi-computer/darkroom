@@ -58,6 +58,7 @@ export function readerHost(
     destination: {
       authorize: () => Promise.resolve(),
       write: () => Promise.resolve(),
+      remove: () => Promise.resolve("absent" as const),
     },
   };
   return createMediaService(host);

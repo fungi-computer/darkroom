@@ -494,6 +494,7 @@ describe("video refinements and provider prices", () => {
           },
           destination: {
             authorize: () => Promise.resolve(),
+            remove: () => Promise.resolve("absent" as const),
             write: () => Promise.resolve(),
           },
         } satisfies MediaServiceHost;

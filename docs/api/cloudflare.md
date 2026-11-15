@@ -218,15 +218,16 @@ Check host namespace, request identity and inactivity before erasure.
 
 `ReturnType`\<[`MediaOperationOwner`](server.md#mediaoperationowner)\[`"preflightErasure"`\]\>
 
-##### erase()
+##### recordWriteIntent()
 
 ```ts
-erase(...input): Promise<Readonly<{
-  clear: boolean;
-}>>;
+recordWriteIntent(...input): ReturnType<MediaOperationOwner["recordWriteIntent"]>;
 ```
 
-Erase inactive output and local storage, then retain the durable erasure marker.
+Record the digest of the exact bytes about to be written to the destination,
+before writing them. An erasure then knows which file this operation owns, even
+if the process dies between the write and its record, and refuses the write once
+erased.
 
 ###### Parameters
 
@@ -236,7 +237,98 @@ Erase inactive output and local storage, then retain the durable erasure marker.
 
 ###### Returns
 
-`Promise`\<`Readonly`\<\{ `clear`: `boolean`; \}\>\>
+`ReturnType`\<[`MediaOperationOwner`](server.md#mediaoperationowner)\[`"recordWriteIntent"`\]\>
+
+##### erase()
+
+```ts
+erase(...input): Promise<MediaErasure>;
+```
+
+Erase the operation and everything it retained or could still write, even
+mid-generation. Erasure is marked first, so an attempt still running, or a lease
+recovered later, can neither transition nor leave output behind: a write that
+lands after the mark is deleted. The marker is never removed, so a crash cannot
+resurrect the operation. Safe to repeat until `clear`; a repeat after a partial
+failure resumes the cleanup.
+
+###### Parameters
+
+| Parameter  | Type                                                                     | Description |
+| ---------- | ------------------------------------------------------------------------ | ----------- |
+| ...`input` | \[`string`, `string`, [`MediaErasePolicy`](server.md#mediaerasepolicy)\] | -           |
+
+###### Returns
+
+`Promise`\<[`MediaErasure`](server.md#mediaerasure)\>
+
+##### retained()
+
+```ts
+retained(...input): Promise<
+  | Readonly<{
+  requestId: string;
+  state:   | "admitted"
+     | "estimating"
+     | "generating"
+     | "writing"
+     | "charging"
+     | "written"
+     | "succeeded"
+     | "interrupted";
+  destinationPath: string;
+  output:   | Readonly<{
+     bytes: number;
+     format: string;
+     contentType: string;
+   }>
+     | null;
+}>
+| null>;
+```
+
+List what this operation retains: its destination path and exact provider
+output. Null once erased.
+
+###### Parameters
+
+| Parameter  | Type                   | Description |
+| ---------- | ---------------------- | ----------- |
+| ...`input` | \[`string`, `string`\] | -           |
+
+###### Returns
+
+`Promise`\< \| `Readonly`\<\{ `requestId`: `string`; `state`: \| `"admitted"` \|
+`"estimating"` \| `"generating"` \| `"writing"` \| `"charging"` \| `"written"`
+\| `"succeeded"` \| `"interrupted"`; `destinationPath`: `string`; `output`: \|
+`Readonly`\<\{ `bytes`: `number`; `format`: `string`; `contentType`: `string`;
+\}\> \| `null`; \}\> \| `null`\>
+
+##### readRetained()
+
+```ts
+readRetained(...input): Promise<
+  | Readonly<{
+  bytes: Uint8Array;
+  format: string;
+}>
+| null>;
+```
+
+Read back the exact retained provider bytes, before any provenance, so a host
+can re-save a result whose destination write was lost. Null when erased or
+nothing was retained.
+
+###### Parameters
+
+| Parameter  | Type                   | Description |
+| ---------- | ---------------------- | ----------- |
+| ...`input` | \[`string`, `string`\] | -           |
+
+###### Returns
+
+`Promise`\< \| `Readonly`\<\{ `bytes`: `Uint8Array`; `format`: `string`; \}\> \|
+`null`\>
 
 ##### readErasure()
 
@@ -657,6 +749,24 @@ Store exact bytes with their MIME type.
 
 `Promise`\<`object` \| `null`\>
 
+##### delete()
+
+```ts
+delete(key): Promise<void>;
+```
+
+Delete one object; absent keys are not an error.
+
+###### Parameters
+
+| Parameter | Type     |
+| --------- | -------- |
+| `key`     | `string` |
+
+###### Returns
+
+`Promise`\<`void`\>
+
 ---
 
 ### R2MediaDestinationOptions
@@ -885,6 +995,30 @@ Re-exports [MediaOperationOwner](server.md#mediaoperationowner)
 
 ---
 
+### MediaErasure
+
+Re-exports [MediaErasure](server.md#mediaerasure)
+
+---
+
+### MediaRetained
+
+Re-exports [MediaRetained](server.md#mediaretained)
+
+---
+
+### MediaRetainedBytes
+
+Re-exports [MediaRetainedBytes](server.md#mediaretainedbytes)
+
+---
+
+### MediaErasePolicy
+
+Re-exports [MediaErasePolicy](server.md#mediaerasepolicy)
+
+---
+
 ### MediaOperationContext
 
 Re-exports [MediaOperationContext](server.md#mediaoperationcontext)
@@ -894,6 +1028,12 @@ Re-exports [MediaOperationContext](server.md#mediaoperationcontext)
 ### MediaOperationStorage
 
 Re-exports [MediaOperationStorage](server.md#mediaoperationstorage)
+
+---
+
+### MediaErasureMarker
+
+Re-exports [MediaErasureMarker](server.md#mediaerasuremarker)
 
 ---
 

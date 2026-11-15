@@ -11,6 +11,7 @@ import {
   type HostReferenceSource,
 } from "../reference-read.js";
 import { mediaPathSchema } from "../media-path.js";
+import { removeMediaIfWritten } from "../media-written.js";
 import type { MediaServiceHost } from "../server.js";
 
 /** The R2 bucket operations a Media destination needs; a native `R2Bucket` satisfies it. */
@@ -33,6 +34,8 @@ export type MediaR2Bucket = {
       httpMetadata: Readonly<{ /** MIME type. */ contentType: string }>;
     }>,
   ): Promise<object | null>;
+  /** Delete one object; absent keys are not an error. */
+  delete(key: string): Promise<void>;
 };
 
 /** Host-owned R2 destination configuration. */
@@ -102,6 +105,21 @@ export function createR2MediaDestination(
       await bucket.put(key, bytes, {
         httpMetadata: { contentType: mediaContentType(bytes) },
       });
+    },
+    remove: async (key, written) => {
+      await authorize(key);
+      return removeMediaIfWritten(
+        {
+          read: async () => {
+            const object = await bucket.get(key);
+            return object === null
+              ? null
+              : new Uint8Array(await object.arrayBuffer());
+          },
+          delete: () => bucket.delete(key),
+        },
+        written.sha256,
+      );
     },
     readReference: async (reference, model) => ({
       ...(await fit(await read("image", reference), model)),

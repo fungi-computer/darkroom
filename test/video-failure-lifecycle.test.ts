@@ -87,6 +87,7 @@ describe("background video diagnostic contract", () => {
           metering: "unmetered",
           destination: {
             authorize: () => Promise.resolve(),
+            remove: () => Promise.resolve("absent" as const),
             write: () => {
               writes++;
               return Promise.resolve();
