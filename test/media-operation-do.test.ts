@@ -958,7 +958,13 @@ describe("MediaOperationOwner internal durable owner", () => {
             stage: "provider",
             code,
             retryable: false,
-            provider: { category: "Error", code: providerCode },
+            provider: {
+              category: "Error",
+              code: providerCode,
+              ...(code === "SAFETY_FILTER_REFUSED" && {
+                reason: "content_refused",
+              }),
+            },
           });
           expect(billing.charges.get("media-operation-a")).toBe(0);
           expect(billing.holds.size).toBe(0);
@@ -969,7 +975,13 @@ describe("MediaOperationOwner internal durable owner", () => {
           await expect(readMediaFailure(replay)).resolves.toMatchObject({
             code,
             retryable: false,
-            provider: { category: "Error", code: providerCode },
+            provider: {
+              category: "Error",
+              code: providerCode,
+              ...(code === "SAFETY_FILTER_REFUSED" && {
+                reason: "content_refused",
+              }),
+            },
           });
           expect(run).toHaveBeenCalledOnce();
           expect(JSON.stringify(report.mock.calls)).not.toContain(marker);
@@ -1232,7 +1244,11 @@ describe("MediaOperationOwner internal durable owner", () => {
           stage: "provider",
           code: "SAFETY_FILTER_REFUSED",
           retryable: false,
-          provider: { category: "Error", code: null },
+          provider: {
+            category: "Error",
+            code: null,
+            reason: "content_refused",
+          },
         });
         expect(
           (await service.request("/generate", generationRequest)).status,

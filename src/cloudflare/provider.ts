@@ -39,6 +39,7 @@ import {
   ELEVENLABS_MAX_BYTES,
 } from "../audio-providers/elevenlabs.js";
 import { readResponseBytes } from "../index.js";
+import { providerDetail, providerReason } from "./provider-reason.js";
 
 type ImageEstimateParams = {
   width: number;
@@ -200,10 +201,23 @@ function providerFailure(model: string, cause: unknown): MediaExecutionError {
   // call at 2026-10-27T01:01:04.296Z). The error had only name and message;
   // no HTTP status was recorded. This is observed wording, not a general
   // Cloudflare code guarantee. Keep numeric classification at this owner.
-  const provider: MediaProviderDiagnostic =
-    code === 2021
-      ? { category, code, reason: "credits_exhausted" }
-      : { category, code };
+  const message = cause instanceof Error ? cause.message : undefined;
+  const safetyRefused =
+    cause instanceof Error && safetyFilterMessage.safeParse(message).success;
+  const reason = safetyRefused
+    ? "content_refused"
+    : providerReason(cause instanceof Error ? cause.name : undefined, message);
+  // Plain provider sentences help only where the class alone does not explain.
+  const detail =
+    reason === undefined || reason === "invalid_input"
+      ? providerDetail(message)
+      : undefined;
+  const provider: MediaProviderDiagnostic = {
+    category,
+    code,
+    ...(reason !== undefined && { reason }),
+    ...(detail !== undefined && { detail }),
+  };
   const safeMessage = outputFlaggedMessage.safeParse(
     cause instanceof Error ? cause.message : undefined,
   );
@@ -221,8 +235,7 @@ function providerFailure(model: string, cause: unknown): MediaExecutionError {
     },
     Redacted.make(cause),
   );
-  return cause instanceof Error &&
-    safetyFilterMessage.safeParse(cause.message).success
+  return safetyRefused
     ? new MediaSafetyFilterRefusal({ cause, provider })
     : new MediaExecutionError("provider", { cause, provider });
 }

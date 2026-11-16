@@ -1,5 +1,20 @@
 # @fungi.computer/darkroom
 
+## 0.11.1
+
+### Patch Changes
+
+- Changes since 0.11.0:
+
+  - fix(darkroom): return the exported provider reason type directly
+  - fix(darkroom): export the provider reason type from agar
+  - fix(darkroom): state the provider reason type in the signature that returns
+    it
+  - fix(prints): say why a generation failed and keep the library order stable
+
+- Updated dependencies
+  - @fungi.computer/agar@0.18.1
+
 ## 0.11.0
 
 ### Minor Changes

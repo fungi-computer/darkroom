@@ -1440,6 +1440,11 @@ export class MediaOperationOwner {
         timer = setTimeout(() => {
           const timeout = new MediaExecutionError("provider", {
             cause: new Error("Background media provider timed out"),
+            provider: {
+              category: "TimeoutError",
+              code: null,
+              reason: "timeout",
+            },
           });
           controller.abort(timeout);
           reject(timeout);

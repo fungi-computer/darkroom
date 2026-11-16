@@ -39,7 +39,13 @@ describe("background video diagnostic contract", () => {
           ? { category: "result_download", status: 503 }
           : failureKind === "credits"
             ? { category: "Error", code: 2021, reason: "credits_exhausted" }
-            : { category: "InferenceUpstreamError", code: 3031 };
+            : failureKind === "safety"
+              ? {
+                  category: "InferenceUpstreamError",
+                  code: 3031,
+                  reason: "content_refused",
+                }
+              : { category: "InferenceUpstreamError", code: 3031 };
       let dispatches = 0;
       let downloads = 0;
       let writes = 0;
