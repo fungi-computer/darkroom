@@ -1,3 +1,4 @@
+import { DailyMediaMeterError } from "./daily-media-meter.js";
 import { mediaPendingSchema } from "./media-binding.js";
 export { estimateMediaModel } from "./cloudflare/provider.js";
 export {
@@ -375,7 +376,12 @@ function failure(
       "Media generated an image but could not save it; retry this request to save the retained result.",
     estimate:
       "Media could not prepare the image inputs or estimate their cost; check the reference files and retry.",
-    billing: "Media billing is unavailable; retry this request.",
+    billing:
+      error.cause instanceof DailyMediaMeterError
+        ? error.cause.operation === "admit"
+          ? "Couldn't check today's spending limit. Try again."
+          : "Couldn't record this generation's spending. Retry this request."
+        : "Media billing is unavailable; retry this request.",
     normalization:
       "Media provider returned an unusable image; start a new request only after checking provider status.",
     artifact:

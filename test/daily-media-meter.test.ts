@@ -1,3 +1,5 @@
+import sharp from "sharp";
+import { createMediaService } from "../src/server.js";
 import * as Effect from "effect/Effect";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -204,3 +206,82 @@ describe("daily media limit", () => {
     for (const each of [test, second, third, fourth]) each.close();
   });
 });
+
+it.each([
+  ["admit", "Couldn't check today's spending limit. Try again."],
+  ["settle", "Couldn't record this generation's spending. Retry this request."],
+] as const)(
+  "names a daily meter %s RPC failure without exposing its private cause",
+  async (operation, message) => {
+    const test = fixture();
+    try {
+      const bytes = await sharp({
+        create: { width: 1024, height: 768, channels: 3, background: "white" },
+      })
+        .png()
+        .toBuffer();
+      const rpcError = new Error("synthetic-private-RPC-detail");
+      const provider = vi.fn(() => Promise.resolve({ bytes, format: "png" }));
+      const service = createMediaService({
+        scope: {
+          actorId: "artist",
+          namespace: "oyster",
+          owner: "prints",
+          destinationId: "computer-a",
+        },
+        operations: { getByName: () => test.owner },
+        provider,
+        metering: createDailyMediaMetering(
+          {
+            dailyAdmit: () =>
+              operation === "admit"
+                ? Promise.reject(rpcError)
+                : Promise.resolve(true),
+            dailySettle: () =>
+              operation === "settle"
+                ? Promise.reject(rpcError)
+                : Promise.resolve(),
+          },
+          1000,
+        ),
+        refusalMessages: {
+          denied: "Daily limit reached.",
+          insufficient_credits: "Daily limit reached.",
+          daily_limit_reached: "Daily limit reached.",
+        },
+        destination: {
+          authorize: () => Promise.resolve(),
+          remove: () => Promise.resolve("absent" as const),
+          write: () => Promise.resolve(),
+        },
+      });
+      const response = await service.request("/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Request-Id": `daily-rpc-${operation}`,
+        },
+        body: JSON.stringify({
+          path: request.path,
+          settings: {
+            model: request.model,
+            prompt: request.prompt,
+            width: request.width,
+            height: request.height,
+          },
+        }),
+      });
+      expect(response.status).toBe(503);
+      const body = await response.json();
+      expect(body).toMatchObject({
+        code: "HOST_FAILURE",
+        stage: "billing",
+        error: message,
+      });
+      expect(JSON.stringify(body)).not.toContain(rpcError.message);
+      expect(provider).toHaveBeenCalledTimes(operation === "admit" ? 0 : 1);
+    } finally {
+      test.close();
+    }
+  },
+);

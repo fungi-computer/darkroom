@@ -118,6 +118,17 @@ export class DailyMediaMeter {
   }
 }
 
+/** Which daily-meter RPC failed; its original cause stays private. */
+export class DailyMediaMeterError extends Error {
+  constructor(
+    readonly operation: "admit" | "settle",
+    options: ErrorOptions,
+  ) {
+    super(`Daily media meter ${operation} failed`, options);
+    this.name = "DailyMediaMeterError";
+  }
+}
+
 /** `MediaMetering` that enforces one exact daily limit through the owning object. */
 export function createDailyMediaMetering(
   meter: DailyMediaMeterPort,
@@ -125,19 +136,28 @@ export function createDailyMediaMetering(
 ): MediaMetering {
   return {
     admit: async (input) => {
-      const admitted = await meter.dailyAdmit({
-        operationId: input.operationId,
-        costMilliunits: input.providerCostMilliunits,
-        limitMilliunits,
-      });
+      let admitted: boolean;
+      try {
+        admitted = await meter.dailyAdmit({
+          operationId: input.operationId,
+          costMilliunits: input.providerCostMilliunits,
+          limitMilliunits,
+        });
+      } catch (cause) {
+        throw new DailyMediaMeterError("admit", { cause });
+      }
       if (!admitted) throw new MediaBillingRefusal("daily_limit_reached");
       return { priceMilliunits: input.providerCostMilliunits };
     },
     settle: async (input) => {
-      await meter.dailySettle({
-        operationId: input.operationId,
-        delivered: input.units > 0,
-      });
+      try {
+        await meter.dailySettle({
+          operationId: input.operationId,
+          delivered: input.units > 0,
+        });
+      } catch (cause) {
+        throw new DailyMediaMeterError("settle", { cause });
+      }
     },
   };
 }

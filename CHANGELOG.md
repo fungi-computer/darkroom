@@ -1,5 +1,16 @@
 # @fungi.computer/darkroom
 
+## 0.11.2
+
+### Patch Changes
+
+- Changes since 0.11.1:
+
+  - fix(media): preserve public failure reasons in Prints toasts
+
+- Updated dependencies
+  - @fungi.computer/agar@0.18.2
+
 ## 0.11.1
 
 ### Patch Changes
