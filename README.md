@@ -1,19 +1,15 @@
 # Darkroom
 
-Generate an image, keep the output, and retry a failed save without paying for
-another generation. Your host supplies identity, permissions, a provider and a
-place to put the file.
+Darkroom generates an image, keeps the result, and lets you retry a failed save
+without paying for another generation.
 
-## Install
-
-```sh
-npm install @fungi.computer/darkroom
-npm install --save-dev wrangler @cloudflare/workers-types
+```mermaid
+flowchart LR
+  App[Your host] --> Darkroom
+  Darkroom -->|generate| Provider[Your model provider]
+  Darkroom -->|save, retry| Destination[Your file destination]
+  Darkroom --> DO[(Operation record)]
 ```
-
-The root catalog and `server` work without a Workers runtime. The `cloudflare`
-adapter runs on workerd, celld and Cloudflare with SQLite Durable Objects and
-R2.
 
 ## Quick start
 
@@ -61,6 +57,9 @@ export default {
         write: async (path, bytes) => {
           await env.OUTPUTS.put(path, bytes);
         },
+        // This demo never deletes the saved file. See "Recover or erase
+        // retained results" for a destination that can.
+        remove: async () => "kept",
       },
     });
     if (new URL(request.url).pathname === "/catalog")
@@ -103,6 +102,43 @@ curl http://localhost:8787/generate \
 Repeat the same request to replay its saved result. Change the input with the
 same ID and the service returns 409. This example admits one local owner. Add
 your host's authentication and destination authorization before serving others.
+
+## Common tasks
+
+### Generate and save an image
+
+The Quick start uses a fixed one-pixel provider so you need no model account.
+
+### Use your own provider and models
+
+See [Bring your own provider and models](#bring-your-own-provider-and-models).
+
+### Store results in your own bucket
+
+See [Use your own R2 bucket](#use-your-own-r2-bucket).
+
+### Recover or erase kept results
+
+See [Recover or erase retained results](#recover-or-erase-retained-results).
+
+## Reference
+
+### Overview
+
+Generate an image, keep the output, and retry a failed save without paying for
+another generation. Your host supplies identity, permissions, a provider and a
+place to put the file.
+
+## Install
+
+```sh
+npm install @fungi.computer/darkroom
+npm install --save-dev wrangler @cloudflare/workers-types
+```
+
+The root catalog and `server` work without a Workers runtime. The `cloudflare`
+adapter runs on workerd, celld and Cloudflare with SQLite Durable Objects and
+R2.
 
 ## Core concepts
 
