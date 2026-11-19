@@ -78,67 +78,6 @@ Keep the hold when media was delivered; release it when nothing was.
 
 ---
 
-### MediaExecutionError
-
-A bounded stage marker for failures that cross the Media HTTP boundary.
-
-#### Extends
-
-- `Error`
-
-#### Constructors
-
-##### Constructor
-
-```ts
-new MediaExecutionError(stage, options?): MediaExecutionError;
-```
-
-###### Parameters
-
-| Parameter  | Type                                                        | Description                                 |
-| ---------- | ----------------------------------------------------------- | ------------------------------------------- |
-| `stage`    | [`MediaFailureStage`](#mediafailurestage)                   | Execution stage where the failure occurred. |
-| `options?` | [`MediaExecutionErrorOptions`](#mediaexecutionerroroptions) | -                                           |
-
-###### Returns
-
-[`MediaExecutionError`](#mediaexecutionerror)
-
-###### Overrides
-
-```ts
-Error.constructor;
-```
-
-#### Properties
-
-##### provider
-
-```ts
-readonly provider: MediaProviderDiagnostic | undefined;
-```
-
-Safe provider facts only; the original cause remains private.
-
-##### customerCharge
-
-```ts
-readonly customerCharge: "none" | "unknown";
-```
-
-Unknown unless the execution owner confirmed zero-unit settlement.
-
-##### stage
-
-```ts
-readonly stage: MediaFailureStage;
-```
-
-Execution stage where the failure occurred.
-
----
-
 ### MediaBillingRefusal
 
 A definitive billing refusal before dispatch; nothing was generated or charged.
@@ -2931,3 +2870,9 @@ access.
 #### Returns
 
 `Hono`\<`BlankEnv`, `BlankSchema`, `"/"`\>
+
+## References
+
+### MediaExecutionError
+
+Re-exports [MediaExecutionError](index.md#mediaexecutionerror)

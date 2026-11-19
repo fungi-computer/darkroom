@@ -36,4 +36,4 @@ admission, billing and destination-write sequence.
 
 `Effect`\<[`MediaGenerationOutcome`](server.md#mediagenerationoutcome), \|
 [`MediaSettingsError`](index.md#mediasettingserror) \|
-[`MediaExecutionError`](server.md#mediaexecutionerror)\>
+[`MediaExecutionError`](index.md#mediaexecutionerror)\>

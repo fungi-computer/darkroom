@@ -26,7 +26,11 @@ import {
   type MediaVideoAspectRatio,
 } from "./model-catalog.js";
 
-export { mediaFailureStageSchema } from "./execution-error.js";
+export {
+  mediaFailureStageSchema,
+  MediaExecutionError,
+  MediaSafetyFilterRefusal,
+} from "./execution-error.js";
 
 export {
   MAX_AUDIO_REFERENCE_BODY_BYTES,

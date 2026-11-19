@@ -1,5 +1,16 @@
 # @fungi.computer/darkroom
 
+## 0.11.9
+
+### Patch Changes
+
+- Changes since 0.11.8:
+
+  - fix(prints): name the real cause when a generation fails
+
+- Updated dependencies
+  - @fungi.computer/agar@0.23.1
+
 ## 0.11.8
 
 ### Patch Changes

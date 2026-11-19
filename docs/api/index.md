@@ -10,6 +10,141 @@
 
 ## Classes
 
+### MediaExecutionError
+
+A bounded stage marker for failures that cross the Media HTTP boundary.
+
+#### Extends
+
+- `Error`
+
+#### Extended by
+
+- [`MediaSafetyFilterRefusal`](#mediasafetyfilterrefusal)
+
+#### Constructors
+
+##### Constructor
+
+```ts
+new MediaExecutionError(stage, options?): MediaExecutionError;
+```
+
+###### Parameters
+
+| Parameter  | Type                                                                 | Description                                 |
+| ---------- | -------------------------------------------------------------------- | ------------------------------------------- |
+| `stage`    | [`MediaFailureStage`](server.md#mediafailurestage)                   | Execution stage where the failure occurred. |
+| `options?` | [`MediaExecutionErrorOptions`](server.md#mediaexecutionerroroptions) | -                                           |
+
+###### Returns
+
+[`MediaExecutionError`](#mediaexecutionerror)
+
+###### Overrides
+
+```ts
+Error.constructor;
+```
+
+#### Properties
+
+##### provider
+
+```ts
+readonly provider: MediaProviderDiagnostic | undefined;
+```
+
+Safe provider facts only; the original cause remains private.
+
+##### customerCharge
+
+```ts
+readonly customerCharge: "none" | "unknown";
+```
+
+Unknown unless the execution owner confirmed zero-unit settlement.
+
+##### stage
+
+```ts
+readonly stage: MediaFailureStage;
+```
+
+Execution stage where the failure occurred.
+
+---
+
+### MediaSafetyFilterRefusal
+
+A provider safety filter refused generation; no output was delivered.
+
+#### Extends
+
+- [`MediaExecutionError`](#mediaexecutionerror)
+
+#### Constructors
+
+##### Constructor
+
+```ts
+new MediaSafetyFilterRefusal(options?): MediaSafetyFilterRefusal;
+```
+
+###### Parameters
+
+| Parameter  | Type                                                                 |
+| ---------- | -------------------------------------------------------------------- |
+| `options?` | [`MediaExecutionErrorOptions`](server.md#mediaexecutionerroroptions) |
+
+###### Returns
+
+[`MediaSafetyFilterRefusal`](#mediasafetyfilterrefusal)
+
+###### Overrides
+
+[`MediaExecutionError`](#mediaexecutionerror).[`constructor`](#constructor)
+
+#### Properties
+
+##### provider
+
+```ts
+readonly provider: MediaProviderDiagnostic | undefined;
+```
+
+Safe provider facts only; the original cause remains private.
+
+###### Inherited from
+
+[`MediaExecutionError`](#mediaexecutionerror).[`provider`](#provider)
+
+##### customerCharge
+
+```ts
+readonly customerCharge: "none" | "unknown";
+```
+
+Unknown unless the execution owner confirmed zero-unit settlement.
+
+###### Inherited from
+
+[`MediaExecutionError`](#mediaexecutionerror).[`customerCharge`](#customercharge)
+
+##### stage
+
+```ts
+readonly stage: MediaFailureStage;
+```
+
+Execution stage where the failure occurred.
+
+###### Inherited from
+
+[`MediaExecutionError`](#mediaexecutionerror).[`stage`](#stage)
+
+---
+
 ### MediaSettingsError
 
 Invalid generation settings or unsupported model parameters.
