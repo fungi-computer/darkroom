@@ -403,6 +403,19 @@ metadata while preserving the AI marker, print ID and image encoding. It returns
 bytes, MIME type and filename extension. The public XMP format uses
 `https://fungi.computer/ns/provenance/1.0/`.
 
+The installed package includes the runnable `examples/standalone` Worker and
+Darkroom's own tests, with their sources. To check a provider or a change
+against them, install the test tools in your project and run them from the
+package folder:
+
+```sh
+npm install --save-dev vitest@4.1.11 sharp@0.35.4 typescript@5.9.3 \
+  @cloudflare/vitest-plugin@1.1.2 wrangler@4.159.0
+cd node_modules/@fungi.computer/darkroom
+npx vitest run --config vitest.node.config.ts
+npx vitest run --config vitest.cloudflare.config.ts
+```
+
 ## Use your own R2 bucket
 
 Keep reference images and generated output in a bucket you already own.

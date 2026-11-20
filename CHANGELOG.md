@@ -1,5 +1,13 @@
 # @fungi.computer/darkroom
 
+## 0.11.12
+
+### Patch Changes
+
+- Changes since 0.11.11:
+
+  - fix(darkroom): ship the tests and examples in the npm package
+
 ## 0.11.11
 
 ### Patch Changes

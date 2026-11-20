@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 import { vi } from "vitest";
-import { createNativeSqliteOwnerFixture } from "../../../../packages/shiitake/test/fixtures/native-sqlite-owner.fixture.js";
+import { createNativeSqliteFixture } from "./native-sqlite.fixture.js";
 import type { MediaErasureMarker } from "../../src/media-operation-storage.js";
 import {
   MediaOperationOwner,
@@ -18,7 +18,7 @@ export function mediaOperationFixture(
   objectName = "media-operation-a",
   hooks: MediaOperationHooks = {},
 ) {
-  const native = createNativeSqliteOwnerFixture(databasePath);
+  const native = createNativeSqliteFixture(databasePath);
   const kv = new Map<string, unknown>();
   let alarm: number | null = null;
   const metadata = new Map<string, Record<string, string>>();
@@ -74,8 +74,8 @@ export function mediaOperationFixture(
   const state = {
     id: { name: objectName },
     storage: {
-      sql: native.owner.sql,
-      transactionSync: native.owner.transactionSync,
+      sql: native.storage.sql,
+      transactionSync: native.storage.transactionSync,
       isErased: () => Promise.resolve(kv.get("botanical:erased") === true),
       markErased: (marker: MediaErasureMarker) => {
         kv.set("botanical:erased-details", marker);
@@ -126,7 +126,7 @@ export function mediaOperationFixture(
   return {
     owner,
     context: state,
-    storage: native.owner,
+    storage: native.storage,
     bucket,
     advance: (milliseconds: number) => vi.advanceTimersByTime(milliseconds),
     close: native.close,
