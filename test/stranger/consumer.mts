@@ -1,3 +1,6 @@
+// Browser profile: the DOM-facing Darkroom entries (app-media-contracts,
+// provenance) and Agar's media handles, with every shared declaration checked
+// strictly. The Worker-side entries are in consumer-worker.mts.
 /// <reference lib="es2023" />
 /// <reference lib="dom" />
 /// <reference lib="dom.iterable" />
@@ -30,24 +33,7 @@ export function attemptType(
   return attempt;
 }
 
-import {
-  listMediaModels,
-  validateMediaVideoSelection,
-  estimateVideoMilliunits,
-  type MediaVideoSelectionInput,
-  type MediaVideoReferenceRole,
-  type MediaProvider,
-} from "@fungi.computer/darkroom";
-import {
-  createMediaService,
-  generateMedia,
-  MediaOperationOwner,
-  type MediaServiceHost,
-  type MediaOperationContext,
-  type MediaOperationBucket,
-} from "@fungi.computer/darkroom/server";
 import { stripPrivateProvenance } from "@fungi.computer/darkroom/provenance";
-import { runMediaGeneration } from "@fungi.computer/darkroom/effect";
 import {
   appMediaGenerationResultSchema,
   destinationSchema,
@@ -56,7 +42,7 @@ import {
   appMediaModelsOutcomeSchema,
 } from "@fungi.computer/darkroom/app-media-contracts";
 
-void mediaModelsSchema.parse(listMediaModels());
+void mediaModelsSchema.parse([]);
 void destinationSchema.parse({ computerId: "local", path: "/picture.png" });
 void appMediaGenerationResultSchema;
 void appMediaModelsOutcomeSchema.parse({ error: "not_granted" });
@@ -64,47 +50,4 @@ void appMediaGenerationOutcomeSchema.parse({
   kind: "pending",
   retryAfterMs: 5000,
 });
-
-export function service(
-  context: MediaOperationContext,
-  bucket: MediaOperationBucket,
-  provider: MediaProvider,
-) {
-  const operation = new MediaOperationOwner(
-    context,
-    { APP_ARTIFACTS: bucket },
-    () => provider,
-  );
-  const host: MediaServiceHost = {
-    scope: {
-      actorId: "reader",
-      namespace: "studio",
-      owner: "illustrator",
-      destinationId: "pictures",
-    },
-    operations: { getByName: () => operation },
-    provider,
-    metering: "unmetered",
-    destination: {
-      authorize: () => Promise.resolve(),
-      write: () => Promise.resolve(),
-      remove: () => Promise.resolve("absent" as const),
-    },
-  };
-  return createMediaService(host);
-}
-void listMediaModels();
 void stripPrivateProvenance;
-void runMediaGeneration;
-
-const videoInput: MediaVideoSelectionInput = {
-  model: "google/veo-3.1-fast",
-  prompt: "a greenhouse at dawn",
-  durationSeconds: 6,
-  references: [{ path: "greenhouse.png", role: "first-frame" }],
-};
-const selectedVideo = validateMediaVideoSelection(videoInput);
-const frameRole: MediaVideoReferenceRole = "last-frame";
-void frameRole;
-void estimateVideoMilliunits(selectedVideo);
-void generateMedia;

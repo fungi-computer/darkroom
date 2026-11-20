@@ -6,6 +6,7 @@ import {
 } from "@fungi.computer/agar/media";
 import assert from "node:assert/strict";
 import { atob } from "node:buffer";
+import { createHash } from "node:crypto";
 import console from "node:console";
 import { DatabaseSync } from "node:sqlite";
 import { MessageChannel } from "node:worker_threads";
@@ -138,11 +139,18 @@ const operations = {
           async isErased() {
             return kv.get("botanical:erased") === true;
           },
-          async markErased() {
+          async markErased(marker) {
             kv.set("botanical:erased", true);
+            kv.set("botanical:erased-marker", marker);
+          },
+          async readErasureMarker() {
+            return kv.get("botanical:erased-marker") ?? null;
           },
           async listKeys() {
             return [...kv.keys()];
+          },
+          async deleteKeys(keys) {
+            for (const key of keys) kv.delete(key);
           },
           async deleteAlarm() {
             alarm = null;
@@ -208,9 +216,14 @@ const generate = (service, requestId = "first-picture", input = body) =>
     body: JSON.stringify(input),
   });
 try {
-  assert.equal(listMediaModels().length, 15);
+  // The service serves the whole packed catalogue.
+  const catalogue = listMediaModels().length;
+  assert.ok(catalogue > 0);
   const service = createMediaService(host);
-  assert.equal((await (await service.request("/models")).json()).length, 15);
+  assert.equal(
+    (await (await service.request("/models")).json()).length,
+    catalogue,
+  );
   assert.equal((await generate(service)).status, 503);
   assert.equal(saved.length, 0);
   const retry = await generate(service);
@@ -272,8 +285,12 @@ try {
   }
   assert.equal(providerCalls, 1);
   assert.equal(saved.length, 1);
+  // Erasure reports the kept file so the host can remove it.
   assert.deepEqual(await owner.erase("studio", "first-picture"), {
     clear: true,
+    abandonedGeneration: false,
+    destinationPath: "picture.gif",
+    writtenSha256: createHash("sha256").update(saved[0].bytes).digest("hex"),
   });
   assert.equal(owner.read(), null);
   console.log(
