@@ -45,6 +45,10 @@ const providerMessage = z
     return { code: Number(body.slice(0, cut)), rest: body.slice(cut + 2) };
   });
 
+// Native Miniflare's local AI stub has no code field. Decode its complete
+// vendor grammar here, alongside Workers AI's numeric message grammar.
+const disabledRemoteBinding = z.literal("Binding AI needs to be run remotely");
+
 // Never print keys, URLs, ids or structured bodies: plain words only.
 const safeSentence = z
   .string()
@@ -62,6 +66,10 @@ export function providerReason(
   name: string | undefined,
   message: string | undefined,
 ): MediaProviderReason | undefined {
+  // Native Miniflare AI binding error, reproduced with Wrangler 4.159.0 and
+  // dev.remote: false. This is local configuration, not a provider outage.
+  if (disabledRemoteBinding.safeParse(message).success)
+    return "remote_binding_disabled";
   if (name === "TimeoutError") return "timeout";
   const parsed = providerMessage.safeParse(message);
   if (!parsed.success) return undefined;

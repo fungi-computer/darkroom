@@ -34,6 +34,11 @@ function failed(name: string, message: string) {
 // https://developers.cloudflare.com/ai-gateway/reference/troubleshooting/
 it.each([
   [
+    "Error",
+    "Binding AI needs to be run remotely",
+    { code: null, reason: "remote_binding_disabled" },
+  ],
+  [
     "AiGatewayError",
     "7003: Model execution failed (User Input Error): image dimensions are too small",
     {

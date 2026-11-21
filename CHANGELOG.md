@@ -1,5 +1,16 @@
 # @fungi.computer/darkroom
 
+## 0.11.18
+
+### Patch Changes
+
+- Changes since 0.11.17:
+
+  - fix(prints): enable proof bindings and explain generation refusals
+
+- Updated dependencies
+  - @fungi.computer/agar@0.27.2
+
 ## 0.11.17
 
 ### Patch Changes
