@@ -1,5 +1,12 @@
 # @fungi.computer/darkroom
 
+## 0.11.22
+
+### Patch Changes
+
+- Updated dependencies
+  - @fungi.computer/agar@0.28.3
+
 ## 0.11.21
 
 ### Patch Changes
