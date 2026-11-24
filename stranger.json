@@ -170,6 +170,7 @@
     "package/test/fixtures/media-team-prompts.ts",
     "package/test/fixtures/native-sqlite.fixture.ts",
     "package/test/gateway-models.test.ts",
+    "package/test/guidance.test.ts",
     "package/test/media-operation-do.test.ts",
     "package/test/media-quote.test.ts",
     "package/test/media-retention.test.ts",

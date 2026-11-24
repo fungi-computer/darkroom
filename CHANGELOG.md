@@ -1,5 +1,13 @@
 # @fungi.computer/darkroom
 
+## 0.11.26
+
+### Patch Changes
+
+- Changes since 0.11.25:
+
+  - fix(oyster): list the packed files the stranger proof found missing
+
 ## 0.11.25
 
 ### Patch Changes
