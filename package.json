@@ -1,6 +1,6 @@
 {
   "name": "@fungi.computer/darkroom",
-  "version": "0.11.26",
+  "version": "0.11.27",
   "author": "Levi <levi@technomancy.dev>",
   "description": "Media generation, durable output retention and provenance with host-owned authority and billing",
   "type": "module",
@@ -62,7 +62,7 @@
   },
   "dependencies": {
     "zod": "4.4.3",
-    "@fungi.computer/cairn": "0.1.0",
+    "@fungi.computer/cairn": "0.1.1",
     "effect": "4.0.2",
     "hono": "4.13.5",
     "png-chunks-extract": "1.0.0",
@@ -73,7 +73,7 @@
     "exifreader": "4.46.0",
     "@fungi.computer/ts-webp": "0.1.6",
     "@xmldom/xmldom": "0.9.12",
-    "@fungi.computer/agar": "0.29.0",
+    "@fungi.computer/agar": "0.29.1",
     "@fungi.computer/capnweb": "0.12.0-fungi.0"
   },
   "devDependencies": {
@@ -81,7 +81,7 @@
     "typescript": "5.9.3",
     "vitest": "4.1.11",
     "wrangler": "4.159.0",
-    "@cloudflare/vitest-plugin": "1.1.2",
+    "@cloudflare/vitest-plugin": "1.6.1",
     "@types/png-chunks-extract": "1.0.2",
     "@types/png-chunks-encode": "1.0.2",
     "sharp": "0.35.4",

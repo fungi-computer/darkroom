@@ -1,5 +1,18 @@
 # @fungi.computer/darkroom
 
+## 0.11.27
+
+### Patch Changes
+
+- Changes since 0.11.26:
+
+  - fix(deps): update the Cloudflare Vitest plugin to the release that exits
+    cleanly
+
+- Updated dependencies
+  - @fungi.computer/cairn@0.1.1
+  - @fungi.computer/agar@0.29.1
+
 ## 0.11.26
 
 ### Patch Changes
