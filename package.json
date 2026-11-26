@@ -1,6 +1,6 @@
 {
   "name": "@fungi.computer/darkroom",
-  "version": "0.11.31",
+  "version": "0.11.32",
   "author": "Levi <levi@technomancy.dev>",
   "description": "Media generation, durable output retention and provenance with host-owned authority and billing",
   "type": "module",
@@ -73,7 +73,7 @@
     "exifreader": "4.46.0",
     "@fungi.computer/ts-webp": "0.1.6",
     "@xmldom/xmldom": "0.9.12",
-    "@fungi.computer/agar": "0.30.0",
+    "@fungi.computer/agar": "0.30.1",
     "@fungi.computer/capnweb": "0.12.0-fungi.0"
   },
   "devDependencies": {
