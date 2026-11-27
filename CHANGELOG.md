@@ -1,5 +1,11 @@
 # @fungi.computer/darkroom
 
+## 0.11.34
+
+### Patch Changes
+
+- @fungi.computer/agar@0.30.3
+
 ## 0.11.33
 
 ### Patch Changes
